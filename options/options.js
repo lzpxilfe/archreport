@@ -413,8 +413,22 @@
     
     if (!citationInput || !copyBtn) return;
     
+    const formatCitation = (meta) => {
+      const parts = [];
+      if (meta.agency && meta.agency.trim()) {
+        parts.push(meta.agency.trim());
+      }
+      if (meta.year && meta.year.trim()) {
+        parts.push(meta.year.trim());
+      }
+      if (meta.reportTitle && meta.reportTitle.trim()) {
+        parts.push(`『${meta.reportTitle.trim()}』`);
+      }
+      return parts.join(", ");
+    };
+
     if (typeof chrome === "undefined" || !chrome.tabs) {
-      citationInput.value = "『경주 월성 시·발굴 조사 보고서』";
+      citationInput.value = "(재)한울문화유산연구원, 2026, 『울산 서하리 240-1번지 유적』";
       copyBtn.disabled = false;
       copyBtn.addEventListener("click", () => {
         navigator.clipboard.writeText(citationInput.value).then(() => {
@@ -456,10 +470,9 @@
         const cached = result[key];
         
         const applyMetadata = (metadata) => {
-          const title = metadata.reportTitle.trim();
-          const formattedTitle = `『${title}』`;
-          citationInput.value = formattedTitle;
-          copyBtn.disabled = false;
+          const citationValue = formatCitation(metadata);
+          citationInput.value = citationValue;
+          copyBtn.disabled = !citationValue;
 
           // Update current preview context with actual metadata
           currentContext = {
@@ -478,7 +491,7 @@
 
           // Copy button action
           copyBtn.addEventListener("click", () => {
-            navigator.clipboard.writeText(formattedTitle).then(() => {
+            navigator.clipboard.writeText(citationValue).then(() => {
               const originalText = copyBtn.textContent;
               copyBtn.textContent = "복사됨!";
               copyBtn.style.background = "#15803d";
