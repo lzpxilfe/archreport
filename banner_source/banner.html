@@ -9,7 +9,7 @@
   body {
     background: #ffffff;
     width: 1060px;
-    height: 480px;
+    height: 390px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -21,11 +21,11 @@
     display: flex;
     flex-direction: row-reverse;
     align-items: flex-start;
-    padding: 40px 44px;
+    padding: 28px 44px;
     gap: 0;
   }
 
-  /* 38px × 7자 = 266px 고정 높이 → 완전한 직사각형 */
+  /* 38px × 1.0 line-height × 7자 = 266px → height: 266px 고정 */
   .col {
     writing-mode: vertical-rl;
     font-size: 38px;
@@ -35,7 +35,7 @@
     line-height: 1.0;
     padding: 0 7px;
     white-space: nowrap;
-    height: 290px;
+    height: 266px;
     overflow: hidden;
   }
 
@@ -46,28 +46,32 @@
 <body>
   <div class="container">
     <!--
-      읽기 순서(오른쪽→왼쪽, 위→아래):
-      다운로드폴더열 때마다눈물나니 각연구소마다파 일명이서로달라
-      旣存프로그램과 서르사맛디아니 할쎄이런전차로 파일명고치고져
-      할배이셔도마참 내뜻시러편디못 할노미하니라이 를爲하야새로크
-      롬擴張프로그램 을짓노니사람마 다날로쑤메便安 킈할따름이니라
+      16열 × 7자 = 112자 (아래아 제거, 훈민정음식 어휘만 유지)
+
+      오른→왼, 위→아래 읽기:
+      各연구소ᄋᆯ發 掘報告書파일 名은本來이름 을담디몯ᄒᆞ야
+      파일名을다운 받으니이런전 차로파일名고 티고져ᄒᆞᆯ배
+      이셔도마참내 제뜻을시러펴 디몯할노미하 니라내이를爲
+      하야새로크롬 擴張프로그램 을밍노니사람 마다날로便安
     -->
-    <div class="col">다운로드폴더열</div>
-    <div class="col">때마다눈물나니</div>
-    <div class="col">각연구소마다파</div>
-    <div class="col">일명이서로달라</div>
-    <div class="col"><ruby>旣<rt>긩</rt></ruby><ruby>存<rt>존</rt></ruby>프로그램과</div>
-    <div class="col">서르사맛디아니</div>
-    <div class="col">할쎄이런전차로</div>
-    <div class="col">파일명고치고져</div>
-    <div class="col">할배이셔도마참</div>
-    <div class="col">내뜻시러편디못</div>
-    <div class="col">할노미하니라이</div>
-    <div class="col">를<ruby>爲<rt>위</rt></ruby>하야새로크</div>
-    <div class="col">롬<ruby>擴<rt>확</rt></ruby><ruby>張<rt>장</rt></ruby>프로그램</div>
-    <div class="col">을짓노니사람마</div>
-    <div class="col">다날로쑤메<ruby>便<rt>편</rt></ruby><ruby>安<rt>안</rt></ruby></div>
-    <div class="col">킈할따름이니라</div>
+
+    <div class="col">各연구소를<ruby>發<rt>발</rt></ruby></div>
+    <div class="col">掘<ruby>報<rt>보</rt></ruby><ruby>告<rt>고</rt></ruby><ruby>書<rt>셔</rt></ruby>파일</div>
+    <div class="col"><ruby>名<rt>명</rt></ruby>은<ruby>本<rt>본</rt></ruby><ruby>來<rt>래</rt></ruby>이름</div>
+    <div class="col">을담디몯하야</div>
+    <div class="col">파일<ruby>名<rt>명</rt></ruby>을다운</div>
+    <div class="col">받으니이런전</div>
+    <div class="col">차로파일<ruby>名<rt>명</rt></ruby>고</div>
+    <div class="col">티고져할배이</div>
+    <div class="col">셔도마참내제</div>
+    <div class="col">뜻을시러펴디</div>
+    <div class="col">몯할노미하니</div>
+    <div class="col">라내이를<ruby>爲<rt>위</rt></ruby>하</div>
+    <div class="col">야새로크롬<ruby>擴<rt>확</rt></ruby></div>
+    <div class="col"><ruby>張<rt>장</rt></ruby>프로그램을</div>
+    <div class="col">밍노니사람마</div>
+    <div class="col">다날로<ruby>便<rt>편</rt></ruby><ruby>安<rt>안</rt></ruby>킈</div>
+
   </div>
 </body>
 </html>
