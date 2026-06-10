@@ -105,19 +105,34 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender) => {
-  if (!message || message.type !== MESSAGE_TYPE || !message.context) {
+  if (!message) {
     return;
   }
 
-  const context = ArchReportFilename.withDerivedContext(message.context);
-  context.capturedAt = context.capturedAt || Date.now();
+  if (message.type === "report-metadata-extracted" && sender && sender.tab) {
+    const tabId = sender.tab.id;
+    const metadata = message.metadata;
+    const key = `reportMetadata_${tabId}`;
+    chrome.storage.local.get(key, (result) => {
+      const existing = result[key];
+      if (!existing || metadata.isTableExtract || !existing.isTableExtract) {
+        chrome.storage.local.set({ [key]: metadata });
+      }
+    });
+    return;
+  }
 
-  pendingContexts.push({
-    context,
-    tabId: sender && sender.tab ? sender.tab.id : -1,
-    frameId: sender ? sender.frameId : 0
-  });
-  cleanupContexts(Date.now());
+  if (message.type === MESSAGE_TYPE && message.context) {
+    const context = ArchReportFilename.withDerivedContext(message.context);
+    context.capturedAt = context.capturedAt || Date.now();
+
+    pendingContexts.push({
+      context,
+      tabId: sender && sender.tab ? sender.tab.id : -1,
+      frameId: sender ? sender.frameId : 0
+    });
+    cleanupContexts(Date.now());
+  }
 });
 
 chrome.action.onClicked.addListener(() => {
@@ -141,4 +156,14 @@ chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
     filename,
     conflictAction: "uniquify"
   });
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.local.remove([`reportMetadata_${tabId}`]);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") {
+    chrome.storage.local.remove([`reportMetadata_${tabId}`]);
+  }
 });

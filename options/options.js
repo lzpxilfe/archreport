@@ -109,6 +109,7 @@
   };
 
   let settings = filename.mergeSettings();
+  let currentContext = sampleMain;
   let draggedRecipeIndex = null;
   let dragInsertIndex = null;
   let insertMarker = null;
@@ -158,7 +159,7 @@
   }
 
   function updatePreview() {
-    els.previewMain.value = filename.renderFilename(sampleMain, settings);
+    els.previewMain.value = filename.renderFilename(currentContext, settings);
     els.previewAttachment.value = filename.renderFilename(sampleAttachment, settings);
   }
 
@@ -450,36 +451,67 @@
         return;
       }
 
-      // Ask content script for report title
-      chrome.tabs.sendMessage(activeTab.id, { type: "get-report-title" }, (response) => {
-        if (chrome.runtime.lastError || !response || !response.reportTitle) {
-          citationInput.value = "";
-          citationInput.placeholder = "보고서 상세 페이지가 아닙니다.";
-          copyBtn.disabled = true;
-          return;
-        }
+      const key = `reportMetadata_${activeTab.id}`;
+      chrome.storage.local.get(key, (result) => {
+        const cached = result[key];
+        
+        const applyMetadata = (metadata) => {
+          const title = metadata.reportTitle.trim();
+          const formattedTitle = `『${title}』`;
+          citationInput.value = formattedTitle;
+          copyBtn.disabled = false;
 
-        const title = response.reportTitle.trim();
-        const formattedTitle = `『${title}』`;
-        citationInput.value = formattedTitle;
-        copyBtn.disabled = false;
+          // Update current preview context with actual metadata
+          currentContext = {
+            reportTitle: metadata.reportTitle,
+            fileTitle: metadata.reportTitle + ".pdf",
+            originalFilename: metadata.reportTitle + ".pdf",
+            year: metadata.year || "",
+            agency: metadata.agency || "",
+            permitNumber: metadata.permitNumber || "",
+            siteName: metadata.siteName || "",
+            submittedDate: metadata.submittedDate || "",
+            province: metadata.province || "",
+            district: metadata.district || ""
+          };
+          updatePreview();
 
-        // Copy button action
-        copyBtn.addEventListener("click", () => {
-          navigator.clipboard.writeText(formattedTitle).then(() => {
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = "복사됨!";
-            copyBtn.style.background = "#15803d";
-            copyBtn.style.borderColor = "#15803d";
-            setTimeout(() => {
-              copyBtn.textContent = originalText;
-              copyBtn.style.background = "";
-              copyBtn.style.borderColor = "";
-            }, 1500);
-          }).catch(err => {
-            console.error("Failed to copy text: ", err);
+          // Copy button action
+          copyBtn.addEventListener("click", () => {
+            navigator.clipboard.writeText(formattedTitle).then(() => {
+              const originalText = copyBtn.textContent;
+              copyBtn.textContent = "복사됨!";
+              copyBtn.style.background = "#15803d";
+              copyBtn.style.borderColor = "#15803d";
+              setTimeout(() => {
+                copyBtn.textContent = originalText;
+                copyBtn.style.background = "";
+                copyBtn.style.borderColor = "";
+              }, 1500);
+            }).catch(err => {
+              console.error("Failed to copy text: ", err);
+            });
           });
-        });
+        };
+
+        if (cached && cached.reportTitle) {
+          applyMetadata(cached);
+        } else {
+          // Fallback: Ask content script directly
+          chrome.tabs.sendMessage(activeTab.id, { type: "get-report-title" }, (response) => {
+            if (chrome.runtime.lastError || !response || !response.reportTitle) {
+              citationInput.value = "";
+              citationInput.placeholder = "보고서 상세 페이지가 아닙니다.";
+              copyBtn.disabled = true;
+              return;
+            }
+            applyMetadata({
+              reportTitle: response.reportTitle,
+              year: "",
+              agency: ""
+            });
+          });
+        }
       });
     });
   }

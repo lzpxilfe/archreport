@@ -151,4 +151,46 @@
       sendResponse({ reportTitle: reportTitle || "" });
     }
   });
+
+  function extractAndReportMetadata() {
+    if (!chrome.runtime || !chrome.runtime.sendMessage) {
+      return;
+    }
+
+    const tableFacts = extractors.extractTableFactsFromDocument(document);
+    const visibleText = pageText();
+    const reportTitle = tableFacts.reportTitle || extractors.extractReportTitleFromDocument(document);
+    const isTableExtract = Boolean(tableFacts.reportTitle);
+
+    if (reportTitle && reportTitle.length >= 4) {
+      const year = tableFacts.year || extractors.extractYearFromText(visibleText);
+      const agency = tableFacts.agency || extractors.extractAgencyFromText(visibleText);
+
+      chrome.runtime.sendMessage({
+        type: "report-metadata-extracted",
+        metadata: {
+          reportTitle,
+          year,
+          agency,
+          permitNumber: tableFacts.permitNumber || "",
+          siteName: tableFacts.siteName || "",
+          province: tableFacts.province || "",
+          district: tableFacts.district || "",
+          submittedDate: tableFacts.submittedDate || "",
+          isTableExtract,
+          url: location.href
+        }
+      }, () => {
+        void chrome.runtime.lastError;
+      });
+    }
+  }
+
+  if (document.readyState === "complete" || document.readyState === "interactive") {
+    extractAndReportMetadata();
+  } else {
+    document.addEventListener("DOMContentLoaded", extractAndReportMetadata);
+  }
+  window.setTimeout(extractAndReportMetadata, 1000);
+  window.setTimeout(extractAndReportMetadata, 3000);
 })();
