@@ -31,6 +31,21 @@ function normalizeUrl(value) {
   }
 }
 
+function hostFromUrl(url) {
+  if (!url) {
+    return "";
+  }
+  try {
+    const clean = String(url).trim();
+    if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+      return "";
+    }
+    return new URL(clean).hostname;
+  } catch (_error) {
+    return "";
+  }
+}
+
 function basename(value) {
   return ArchReportFilename.filenameFromUrl(value || "");
 }
@@ -54,6 +69,14 @@ function urlScore(context, item) {
   if (context.fileIdx && itemUrl.includes(context.fileIdx)) {
     score += 3;
   }
+
+  // Host matching for downloads with tabId: -1
+  const contextHost = hostFromUrl(context.pageUrl);
+  const itemHost = hostFromUrl(itemUrl);
+  if (contextHost && itemHost && contextHost === itemHost) {
+    score += 6;
+  }
+
   return score;
 }
 

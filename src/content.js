@@ -104,7 +104,7 @@
 
   function captureDownloadIntent(event) {
     const control = event.target && event.target.closest
-      ? event.target.closest("a, button, input[type='button'], input[type='submit']")
+      ? event.target.closest("a, button, input, [onclick], [data-url], [data-filename]")
       : null;
 
     if (sourceName() === "e-minwon") {
@@ -122,6 +122,59 @@
     sendContext(context);
   }
 
+  function handleZipDownloadIntercept(event) {
+    const control = event.target && event.target.closest
+      ? event.target.closest("a, button, input, [onclick]")
+      : null;
+
+    if (!control) {
+      return;
+    }
+
+    const text = (control.textContent || control.value || control.getAttribute("title") || "").trim();
+    const source = (control.getAttribute("href") || "") + " " + (control.getAttribute("onclick") || "");
+
+    const isZipTrigger = 
+      /일괄\s*다운|전체\s*다운|선택\s*다운/.test(text) ||
+      /fn_getZip|ZipDownload|fileZip|zipDown/i.test(source);
+
+    if (!isZipTrigger) {
+      return;
+    }
+
+    const checkboxes = Array.from(document.querySelectorAll("input[type='checkbox']"))
+      .filter((cb) => cb.id !== "checkAll" && cb.id !== "allCheck" && !cb.classList.contains("all"));
+
+    const checkedBoxes = checkboxes.filter((cb) => cb.checked);
+    const targetBoxes = checkedBoxes.length > 0 ? checkedBoxes : checkboxes;
+
+    if (targetBoxes.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    let delay = 0;
+    targetBoxes.forEach((cb) => {
+      const row = cb.closest("tr, li");
+      if (!row) {
+        return;
+      }
+
+      const downloadBtn = Array.from(row.querySelectorAll("a, button, img, input"))
+        .find((el) => extractors.isDownloadControl(el));
+
+      if (downloadBtn) {
+        window.setTimeout(() => {
+          downloadBtn.click();
+        }, delay);
+        delay += 300;
+      }
+    });
+  }
+
+  document.addEventListener("click", handleZipDownloadIntercept, true);
   document.addEventListener("pointerdown", captureDownloadIntent, true);
   document.addEventListener("click", captureDownloadIntent, true);
   document.addEventListener("keydown", function captureKeyboardIntent(event) {
