@@ -8,11 +8,11 @@
     "storage"
   ],
   "host_permissions": [
-    "https://www.heritage.go.kr/*",
-    "https://www.cha.go.kr/*",
-    "https://www.khs.go.kr/*",
-    "https://www.e-minwon.go.kr/*",
-    "https://portal.nrich.go.kr/*",
+    "*://*.heritage.go.kr/*",
+    "*://*.cha.go.kr/*",
+    "*://*.khs.go.kr/*",
+    "*://*.e-minwon.go.kr/*",
+    "*://*.nrich.go.kr/*",
     "http://116.67.83.213/*"
   ],
   "background": {
@@ -27,11 +27,11 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.heritage.go.kr/*",
-        "https://www.cha.go.kr/*",
-        "https://www.khs.go.kr/*",
-        "https://www.e-minwon.go.kr/*",
-        "https://portal.nrich.go.kr/*"
+        "*://*.heritage.go.kr/*",
+        "*://*.cha.go.kr/*",
+        "*://*.khs.go.kr/*",
+        "*://*.e-minwon.go.kr/*",
+        "*://*.nrich.go.kr/*"
       ],
       "js": [
         "src/filename.js",

@@ -220,6 +220,42 @@
     });
   }
 
+  function extractEminwonContextsFromDocument(doc) {
+    const facts = extractTableFactsFromDocument(doc);
+    if (!facts.reportTitle) {
+      return [];
+    }
+
+    const scripts = Array.from(doc.querySelectorAll("script"))
+      .map((script) => script.textContent || "")
+      .join("\n");
+    const files = parseRaonUploadedFiles(scripts);
+
+    if (files.length === 0) {
+      return [Object.assign({}, facts, {
+        sourceKind: "e-minwon",
+        fileTitle: "",
+        originalFilename: "",
+        attachmentTitle: "",
+        sequenceNumber: ""
+      })];
+    }
+
+    return files.map((file, index) => {
+      let sequenceNumber = "";
+      if (files.length > 1) {
+        sequenceNumber = String(index + 1);
+      }
+      return Object.assign({}, facts, {
+        sourceKind: "e-minwon",
+        fileTitle: file.fileTitle || "",
+        originalFilename: file.fileTitle || "",
+        attachmentTitle: "",
+        sequenceNumber: sequenceNumber
+      });
+    });
+  }
+
   function extractReportTitleFromDocument(doc) {
     if (!doc) {
       return "";
@@ -335,13 +371,22 @@
       return false;
     }
     const source = getControlSource(control);
-    const text = normalizeSpaces(control.textContent || control.getAttribute("title") || "");
+    let text = (control.textContent || "").trim() + " " + (control.getAttribute("title") || "");
+    const images = control.querySelectorAll ? control.querySelectorAll("img") : [];
+    for (const img of images) {
+      text += " " + (img.getAttribute("alt") || "") + " " + (img.getAttribute("title") || "");
+    }
+    text = normalizeSpaces(text);
+
     return Boolean(
       (control.dataset && (control.dataset.url || control.dataset.filename)) ||
       source.includes("fn_getDownLode") ||
       source.includes("fnOriFileDownload") ||
       source.includes("fnFileDownload") ||
-      (text.includes("다운로드") && source.includes("includeFileDownLoad"))
+      source.includes("fn_file_download") ||
+      source.includes("downloadFile") ||
+      source.includes("fileDownload") ||
+      (text.includes("다운로드") && (source.includes("includeFileDownLoad") || source.includes("download") || source.includes("file")))
     );
   }
 
@@ -349,6 +394,7 @@
     decodeHtmlEntities,
     extractAgencyFromText,
     extractEminwonContextFromDocument,
+    extractEminwonContextsFromDocument,
     extractFilenameFromUrl,
     extractReportTitleFromDocument,
     extractTableFactsFromDocument,

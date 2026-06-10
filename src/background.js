@@ -149,11 +149,24 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     const context = ArchReportFilename.withDerivedContext(message.context);
     context.capturedAt = context.capturedAt || Date.now();
 
-    pendingContexts.push({
-      context,
-      tabId: sender && sender.tab ? sender.tab.id : -1,
-      frameId: sender ? sender.frameId : 0
-    });
+    const tabId = sender && sender.tab ? sender.tab.id : -1;
+    const frameId = sender ? sender.frameId : 0;
+
+    const existingIndex = pendingContexts.findIndex((entry) =>
+      entry.tabId === tabId &&
+      ((context.downloadUrl && entry.context.downloadUrl === context.downloadUrl) ||
+       (context.originalFilename && entry.context.originalFilename === context.originalFilename))
+    );
+
+    if (existingIndex >= 0) {
+      pendingContexts[existingIndex].context = context;
+    } else {
+      pendingContexts.push({
+        context,
+        tabId,
+        frameId
+      });
+    }
     cleanupContexts(Date.now());
   }
 });
