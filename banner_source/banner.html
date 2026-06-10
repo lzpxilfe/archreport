@@ -3,147 +3,219 @@
 <head>
 <meta charset="UTF-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700;900&display=swap');
+  @font-face {
+    font-family: 'NanumMyeongjoYetHangulWeb';
+    src: url('NanumMyeongjo-YetHangul.woff2') format('woff2'),
+         url('NanumMyeongjo-YetHangul.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap; /* Ensures text is visible immediately using fallback */
+  }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
-    background: #ffffff;
-    width: 928px;
-    height: 540px;
+    background-color: #f4edd8; /* Warm traditional paper base */
+    background-image:
+      radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.4), rgba(0, 0, 0, 0.05)),
+      repeating-linear-gradient(45deg, rgba(139, 90, 43, 0.015) 0px, rgba(139, 90, 43, 0.015) 2px, transparent 2px, transparent 10px),
+      repeating-linear-gradient(-45deg, rgba(139, 90, 43, 0.015) 0px, rgba(139, 90, 43, 0.015) 2px, transparent 2px, transparent 10px);
+    width: 1200px;
+    height: 630px;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-family: 'Noto Serif KR', 'Malgun Gothic', serif;
     overflow: hidden;
+    position: relative;
   }
 
+  /* Traditional book page container */
+  .book-page {
+    background-color: #fdfbf7;
+    padding: 40px 50px;
+    border: 5px double #2c190d; /* Double line border (주란) */
+    box-shadow: 
+      0 15px 35px rgba(0, 0, 0, 0.1),
+      inset 0 0 40px rgba(139, 90, 43, 0.06);
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* 9 columns, 10 rows grid */
   #grid {
     display: grid;
-    grid-template-columns: repeat(14, 60px);
-    grid-template-rows: repeat(9, 50px);
+    grid-template-columns: repeat(9, 64px);
+    grid-template-rows: repeat(10, 48px);
   }
 
   .cell {
-    width: 60px;
-    height: 50px;
+    width: 64px;
+    height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 40px;
-    font-weight: 900;
-    color: #1a1a1a;
+    font-size: 38px;
+    font-weight: 800;
+    color: #1c1917; /* Charcoal/pine soot black */
     position: relative;
     line-height: 1;
+    font-family: 'NanumMyeongjoYetHangulWeb', 'NanumMyeongjoYetHangul', 'Nanum Myeongjo', 'Malgun Gothic', serif;
+    text-shadow: 0.3px 0.3px 0.5px rgba(0, 0, 0, 0.6);
   }
 
-  /* 한자 옆 작은 한글 주석 */
+  /* Hanja cell: Hanja on left, Hangul annotation on right */
+  .hanja-cell {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    padding-left: 2px;
+  }
+
+  .hanja {
+    font-size: 38px;
+    font-weight: 800;
+    color: #1c1917;
+    font-family: 'NanumMyeongjoYetHangulWeb', 'NanumMyeongjoYetHangul', 'Nanum Myeongjo', 'Malgun Gothic', serif;
+  }
+
+  /* Enlarged and bolder Hangul reading next to Hanja */
   .ann {
-    position: absolute;
-    left: calc(50% + 15px);
-    top: 4px;
-    font-size: 11px;
+    font-size: 20px;
     font-weight: 700;
-    color: #1a1a1a;
-    line-height: 1;
+    color: #2c190d;
+    margin-left: 1px;
+    margin-top: -6px; /* Offset upward to align with the center of Hanja */
+    font-family: 'NanumMyeongjoYetHangulWeb', 'NanumMyeongjoYetHangul', 'Nanum Myeongjo', 'Malgun Gothic', serif;
+  }
+
+  /* Red seal stamp (낙관) in the bottom-left margin */
+  .seal {
+    position: absolute;
+    bottom: 25px;
+    left: 25px;
+    border: 2px solid #b91c1c;
+    background: rgba(185, 28, 28, 0.03);
+    color: #b91c1c;
+    font-family: 'NanumMyeongjoYetHangulWeb', 'NanumMyeongjoYetHangul', 'Nanum Myeongjo', 'Malgun Gothic', serif;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.1;
+    padding: 3px 5px;
+    text-align: center;
+    letter-spacing: 1px;
+    opacity: 0.8;
+    transform: rotate(-3deg);
+    box-shadow: inset 0 0 3px rgba(185, 28, 28, 0.1);
   }
 </style>
 </head>
 <body>
-<div id="grid"></div>
+
+<!-- Delayed image to delay the onload event in headless Chrome -->
+<img src="/delay_image.png" style="display:none;">
+
+<div class="book-page">
+  <div id="grid"></div>
+  <div class="seal">
+    考古<br>正名
+  </div>
+</div>
+
 <script>
 /*
-  방법: CSS Grid 14열×9행, 글자 하나씩 grid-column/grid-row 명시 배치
-  → writing-mode 없음 → 아래아(ᆞ)·낱자 모두 각자 칸에 정확히 렌더링
+  중세 국어 + 한자 혼용, 9열 × 10행 = 90자
+  읽기 순서: 오른쪽 열 → 왼쪽 열, 위 → 아래
 
-  읽기 순서: 오른쪽 열→왼쪽 열, 위→아래 (훈민정음 세로쓰기)
+  원문 (현대어):
+  각 연구소의 발굴조사보고서 파일명이 본래의 보고서 이름을 담지 못하여
+  다시 수고를 들여 고치는 일이 반복되고 있다.
+  내가 이를 안타깝게 생각해, 크롬 확장 프로그램을 만드니
+  사람마다 쓰며 날로 편안하게 하고자 할 따름이다.
 
-  전체 문장 (126자 = 14열 × 9행):
-  研究所ᄋᆞᆯ發掘報 | 告書ᄋᆞᆯ파일名ᄋ | ᆞᆫ本來이름ᄋᆞᆯ |
-  담디몯ᄒᆞ야이런전 | ᄎᆞ로파일名고티고 | 져ᄒᆞᆯ빼이셔도마 |
-  참내제意들시러펴디 | 몯ᄒᆞᆯ人이하니라 | 내이를爲ᄒᆞ야어엿 |
-  비너겨새로크롬擴張 | 프로그램을밍ᄀᆞ노 | 니人마다ᄒᆡ여날로 |
-  쑤메便安킈ᄒᆞ고져 | ᄒᆞᆯ따ᄅᆞ미니라
-
-  현대어 해석:
-  연구소를 발굴보고서를 파일명은 본래 이름을 담지 못하야
-  이런 차로 파일명 고치고자 할 바 있어도 마침내 제 뜻들을
-  시러 펴지 못할 이가 하니라(많더라) 내 이를 위하야 어여삐
-  너겨 새로 크롬 확장프로그램을 만드노니 사람마다 하여 날로
-  쓰매 편안케 하고자 할 따름이니라
+  중세 국어 변환 (정확히 90자):
+  각 연구소의 -> 各研究所ᄋᆡ
+  발굴조사보고서 -> 發掘調査報告書
+  파일명이 -> 파일名이
+  본래의 보고서 -> 本來ᄋᆡ報告書
+  이름을 담지 못하여 -> 이름ᄋᆞᆯ담디몯ᄒᆞ야
+  다시 수고를 들여 고치는 일이 -> 다시수고ᄅᆞᆯ드려고티ᄂᆞᆫ이리
+  반복되고 있다 -> 거듭ᄒᆞᄂᆞ니라
+  내가 이를 -> 내가이ᄅᆞᆯ
+  어엿비 너겨 -> 어엿비너겨
+  크롬 확장 프로그램을 -> 크롬擴張프로그램ᄋᆞᆯ
+  만드니 -> ᄆᆡᆼᄀᆞ노니
+  사람마다 쓰며 -> 사람마다ᄡᅮ메
+  날로 편안하게 하고자 -> 날로便安킈ᄒᆞ고져
+  할 따름이니라 -> ᄒᆞᆯᄯᆞᄅᆞ미니라
 */
+const COLS = 9;
+const ROWS = 10;
 
-const COLS = 14;
-const ROWS = 9;
-
-// 배열 순서: 열 단위 (index 0 = 맨 오른쪽 열, 위→아래)
-// 각 항목: [글자] 또는 [글자, 한글주석]
 const data = [
-  // ── 열 0 (맨 오른쪽) ──
-  ['研','연'],['究','구'],['所','소'],['ᄋ'],['ᆞ'],['ᆯ'],['發','발'],['掘','굴'],['報','보'],
+  // ── 열 1 (맨 오른쪽): 各研究所ᄋᆡ發掘調査 ──
+  ['各','각'], ['研','연'], ['究','구'], ['所','소'], ['ᄋᆡ',''], ['發','발'], ['掘','굴'], ['調','조'], ['査','사'], ['報','보'],
 
-  // ── 열 1 ──
-  ['告','고'],['書','셔'],['ᄋ'],['ᆞ'],['ᆯ'],['파'],['일'],['名','명'],['ᄋ'],
+  // ── 열 2: 告書파일名이本來ᄋᆡ報 ──
+  ['告','고'], ['書','서'], ['파',''], ['일',''], ['名','명'], ['이',''], ['本','본'], ['來','래'], ['ᄋᆡ',''], ['報','보'],
 
-  // ── 열 2 ──
-  ['ᆞ'],['ᆫ'],['本','본'],['來','래'],['이'],['름'],['ᄋ'],['ᆞ'],['ᆯ'],
+  // ── 열 3: 告書이름ᄋᆞᆯ담디몯ᄒᆞ야 ──
+  ['告','고'], ['書','서'], ['이',''], ['름',''], ['ᄋᆞᆯ',''], ['담',''], ['디',''], ['몯',''], ['ᄒᆞ',''], ['야',''],
 
-  // ── 열 3 ──
-  ['담'],['디'],['몯'],['ᄒ'],['ᆞ'],['야'],['이'],['런'],['전'],
+  // ── 열 4: 다시수고ᄅᆞᆯ드려고티ᄂᆞᆫ ──
+  ['다',''], ['시',''], ['수',''], ['고',''], ['ᄅᆞᆯ',''], ['드',''], ['려',''], ['고',''], ['티',''], ['ᄂᆞᆫ',''],
 
-  // ── 열 4 ──
-  ['ᄎ'],['ᆞ'],['로'],['파'],['일'],['名','명'],['고'],['티'],['고'],
+  // ── 열 5: 이리거듭ᄒᆞᄂᆞ니라내가 ──
+  ['이',''], ['리',''], ['거',''], ['듭',''], ['ᄒᆞ',''], ['ᄂᆞ',''], ['니',''], ['라',''], ['내',''], ['가',''],
 
-  // ── 열 5 ──
-  ['져'],['ᄒ'],['ᆞ'],['ᆯ'],['빼'],['이'],['셔'],['도'],['마'],
+  // ── 열 6: 이ᄅᆞᆯ어엿비너겨크롬擴 ──
+  ['이',''], ['ᄅᆞᆯ',''], ['어',''], ['엿',''], ['비',''], ['너',''], ['겨',''], ['크',''], ['롬',''], ['擴','확'],
 
-  // ── 열 6 ──
-  ['참'],['내'],['제'],['意','의'],['들'],['시'],['러'],['펴'],['디'],
+  // ── 열 7: 張프로그램ᄋᆞᆯᄆᆡᆼᄀᆞ노니 ──
+  ['張','장'], ['프',''], ['로',''], ['그',''], ['램',''], ['ᄋᆞᆯ',''], ['ᄆᆡᆼ',''], ['ᄀᆞ',''], ['노',''], ['니',''],
 
-  // ── 열 7 ──
-  ['몯'],['ᄒ'],['ᆞ'],['ᆯ'],['人','인'],['이'],['하'],['니'],['라'],
+  // ── 열 8: 사람마다ᄡᅮ메날로便安 ──
+  ['사',''], ['람',''], ['마',''], ['다',''], ['ᄡᅮ',''], ['메',''], ['날',''], ['로',''], ['便','편'], ['安','안'],
 
-  // ── 열 8 ──
-  ['내'],['이'],['를'],['爲','위'],['ᄒ'],['ᆞ'],['야'],['어'],['엿'],
-
-  // ── 열 9 ──
-  ['비'],['너'],['겨'],['새'],['로'],['크'],['롬'],['擴','확'],['張','장'],
-
-  // ── 열 10 ──
-  ['프'],['로'],['그'],['램'],['을'],['밍'],['ᄀ'],['ᆞ'],['노'],
-
-  // ── 열 11 ──
-  ['니'],['人','인'],['마'],['다'],['ᄒ'],['ᆡ'],['여'],['날'],['로'],
-
-  // ── 열 12 ──
-  ['쑤'],['메'],['便','편'],['安','안'],['킈'],['ᄒ'],['ᆞ'],['고'],['져'],
-
-  // ── 열 13 (맨 왼쪽) ──
-  ['ᄒ'],['ᆞ'],['ᆯ'],['따'],['ᄅ'],['ᆞ'],['미'],['니'],['라'],
+  // ── 열 9 (맨 왼쪽): 킈ᄒᆞ고져ᄒᆞᆯᄯᆞᄅᆞ미니라 ──
+  ['킈',''], ['ᄒᆞ',''], ['고',''], ['져',''], ['ᄒᆞᆯ',''], ['ᄯᆞ',''], ['ᄅᆞ',''], ['미',''], ['니',''], ['라','']
 ];
 
-// CSS Grid에 명시적 배치
 const grid = document.getElementById('grid');
 
 data.forEach(([char, ann], idx) => {
-  const dataCol = Math.floor(idx / ROWS); // 0 = 맨 오른쪽
-  const dataRow = idx % ROWS;             // 0 = 맨 위
+  const dataCol = Math.floor(idx / ROWS);
+  const dataRow  = idx % ROWS;
 
-  // CSS grid: col 14 = 맨 오른쪽, col 1 = 맨 왼쪽
-  const cssCol = COLS - dataCol;
+  const cssCol = COLS - dataCol;   // 9 = 맨 오른쪽, 1 = 맨 왼쪽
   const cssRow = dataRow + 1;
 
   const cell = document.createElement('div');
   cell.className = 'cell';
   cell.style.gridColumn = cssCol;
   cell.style.gridRow = cssRow;
-  cell.textContent = char;
+
+  // 세로줄 계선(界線) 추가 (맨 왼쪽 열 제외하고 왼쪽에 선을 그음)
+  if (cssCol > 1) {
+    cell.style.borderLeft = '1px solid rgba(44, 25, 13, 0.22)';
+  }
 
   if (ann) {
-    const span = document.createElement('span');
-    span.className = 'ann';
-    span.textContent = ann;
-    cell.appendChild(span);
+    cell.className += ' hanja-cell';
+    
+    const hanjaSpan = document.createElement('span');
+    hanjaSpan.className = 'hanja';
+    hanjaSpan.textContent = char;
+    cell.appendChild(hanjaSpan);
+
+    const annSpan = document.createElement('span');
+    annSpan.className = 'ann';
+    annSpan.textContent = ann;
+    cell.appendChild(annSpan);
+  } else {
+    cell.textContent = char;
   }
 
   grid.appendChild(cell);
