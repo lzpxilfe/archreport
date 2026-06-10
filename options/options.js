@@ -8,7 +8,7 @@
   const titleTemplate = [
     { kind: "field", value: "reportTitle" },
     { kind: "separator", value: "space" },
-    { kind: "field", value: "attachmentTitle" }
+    { kind: "field", value: "sequenceNumber" }
   ];
   const archiveTemplate = [
     { kind: "field", value: "agency" },
@@ -17,7 +17,7 @@
     { kind: "separator", value: "space" },
     { kind: "field", value: "reportTitle" },
     { kind: "separator", value: "space" },
-    { kind: "field", value: "attachmentTitle" }
+    { kind: "field", value: "sequenceNumber" }
   ];
   const permitTemplate = [
     { kind: "field", value: "permitNumber" },
@@ -28,7 +28,7 @@
     { kind: "separator", value: "commaSpace" },
     { kind: "field", value: "reportTitle" },
     { kind: "separator", value: "space" },
-    { kind: "field", value: "attachmentTitle" }
+    { kind: "field", value: "sequenceNumber" }
   ];
 
   const presets = [
@@ -502,7 +502,7 @@
   }
 
   function setupTabs() {
-    document.body.classList.add("tab-citation-active");
+    document.body.classList.add("tab-rename-active");
 
     const tabButtons = document.querySelectorAll(".tab-nav .tab-btn");
     tabButtons.forEach(btn => {

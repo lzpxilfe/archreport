@@ -33,9 +33,25 @@
       return null;
     }
 
+    const tableFacts = extractors.extractTableFactsFromDocument(document);
     const visibleText = pageText();
-    const reportTitle = extractors.extractReportTitleFromDocument(document);
+
+    const reportTitle = tableFacts.reportTitle || extractors.extractReportTitleFromDocument(document);
+    const year = tableFacts.year || extractors.extractYearFromText(visibleText);
+    const agency = tableFacts.agency || extractors.extractAgencyFromText(visibleText);
     const fileTitle = extractors.normalizeSpaces(controlData.fileTitle || controlData.originalFilename || "");
+
+    // Find all download controls on the page to compute dynamic sequence numbers
+    const allControls = Array.from(document.querySelectorAll("a, button, input"))
+      .filter((el) => extractors.isDownloadControl(el));
+
+    let sequenceNumber = controlData.sequenceNumber || "";
+    if (!sequenceNumber && allControls.length > 1) {
+      const index = allControls.indexOf(control);
+      if (index >= 0) {
+        sequenceNumber = String(index + 1);
+      }
+    }
 
     return filename.withDerivedContext({
       source: sourceName(),
@@ -43,14 +59,19 @@
       pageUrl: location.href,
       pageTitle: document.title,
       reportTitle,
-      year: extractors.extractYearFromText(visibleText),
-      agency: extractors.extractAgencyFromText(visibleText),
+      year,
+      agency,
+      permitNumber: tableFacts.permitNumber || "",
+      siteName: tableFacts.siteName || "",
+      province: tableFacts.province || "",
+      district: tableFacts.district || "",
+      submittedDate: tableFacts.submittedDate || "",
       downloadUrl: controlData.downloadUrl || "",
       originalFilename: controlData.originalFilename || fileTitle,
       fileTitle,
       fileIdx: controlData.fileIdx || "",
       menuIdx: controlData.menuIdx || "",
-      sequenceNumber: controlData.sequenceNumber || "",
+      sequenceNumber,
       capturedAt: Date.now()
     });
   }

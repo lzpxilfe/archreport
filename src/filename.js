@@ -22,7 +22,7 @@
     { kind: "separator", value: "commaSpace" },
     { kind: "field", value: "reportTitle" },
     { kind: "separator", value: "space" },
-    { kind: "field", value: "attachmentTitle" }
+    { kind: "field", value: "sequenceNumber" }
   ];
 
   const DEFAULT_SETTINGS = {

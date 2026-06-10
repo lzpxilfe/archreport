@@ -225,6 +225,11 @@
       return "";
     }
 
+    const facts = extractTableFactsFromDocument(doc);
+    if (facts && facts.reportTitle) {
+      return facts.reportTitle;
+    }
+
     const rejected = new Set([
       "국가유산 간행물",
       "보고서",
