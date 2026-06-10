@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700;900&display=swap');
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
     background: #ffffff;
-    width: 1060px;
-    height: 390px;
+    width: 928px;
+    height: 540px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -17,61 +18,136 @@
     overflow: hidden;
   }
 
-  .container {
-    display: flex;
-    flex-direction: row-reverse;
-    align-items: flex-start;
-    padding: 28px 44px;
-    gap: 0;
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(14, 60px);
+    grid-template-rows: repeat(9, 50px);
   }
 
-  /* 38px × 1.0 line-height × 7자 = 266px → height: 266px 고정 */
-  .col {
-    writing-mode: vertical-rl;
-    font-size: 38px;
+  .cell {
+    width: 60px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
     font-weight: 900;
     color: #1a1a1a;
-    letter-spacing: 0em;
-    line-height: 1.0;
-    padding: 0 7px;
-    white-space: nowrap;
-    height: 266px;
-    overflow: hidden;
+    position: relative;
+    line-height: 1;
   }
 
-  ruby { ruby-position: right; ruby-align: center; }
-  rt { font-size: 12px; font-weight: 700; color: #1a1a1a; letter-spacing: 0; }
+  /* 한자 옆 작은 한글 주석 */
+  .ann {
+    position: absolute;
+    left: calc(50% + 15px);
+    top: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #1a1a1a;
+    line-height: 1;
+  }
 </style>
 </head>
 <body>
-  <div class="container">
-    <!--
-      16열 × 7자 = 112자 (아래아 제거, 훈민정음식 어휘만 유지)
+<div id="grid"></div>
+<script>
+/*
+  방법: CSS Grid 14열×9행, 글자 하나씩 grid-column/grid-row 명시 배치
+  → writing-mode 없음 → 아래아(ᆞ)·낱자 모두 각자 칸에 정확히 렌더링
 
-      오른→왼, 위→아래 읽기:
-      各연구소ᄋᆯ發 掘報告書파일 名은本來이름 을담디몯ᄒᆞ야
-      파일名을다운 받으니이런전 차로파일名고 티고져ᄒᆞᆯ배
-      이셔도마참내 제뜻을시러펴 디몯할노미하 니라내이를爲
-      하야새로크롬 擴張프로그램 을밍노니사람 마다날로便安
-    -->
+  읽기 순서: 오른쪽 열→왼쪽 열, 위→아래 (훈민정음 세로쓰기)
 
-    <div class="col">各연구소를<ruby>發<rt>발</rt></ruby></div>
-    <div class="col">掘<ruby>報<rt>보</rt></ruby><ruby>告<rt>고</rt></ruby><ruby>書<rt>셔</rt></ruby>파일</div>
-    <div class="col"><ruby>名<rt>명</rt></ruby>은<ruby>本<rt>본</rt></ruby><ruby>來<rt>래</rt></ruby>이름</div>
-    <div class="col">을담디몯하야</div>
-    <div class="col">파일<ruby>名<rt>명</rt></ruby>을다운</div>
-    <div class="col">받으니이런전</div>
-    <div class="col">차로파일<ruby>名<rt>명</rt></ruby>고</div>
-    <div class="col">티고져할배이</div>
-    <div class="col">셔도마참내제</div>
-    <div class="col">뜻을시러펴디</div>
-    <div class="col">몯할노미하니</div>
-    <div class="col">라내이를<ruby>爲<rt>위</rt></ruby>하</div>
-    <div class="col">야새로크롬<ruby>擴<rt>확</rt></ruby></div>
-    <div class="col"><ruby>張<rt>장</rt></ruby>프로그램을</div>
-    <div class="col">밍노니사람마</div>
-    <div class="col">다날로<ruby>便<rt>편</rt></ruby><ruby>安<rt>안</rt></ruby>킈</div>
+  전체 문장 (126자 = 14열 × 9행):
+  研究所ᄋᆞᆯ發掘報 | 告書ᄋᆞᆯ파일名ᄋ | ᆞᆫ本來이름ᄋᆞᆯ |
+  담디몯ᄒᆞ야이런전 | ᄎᆞ로파일名고티고 | 져ᄒᆞᆯ빼이셔도마 |
+  참내제意들시러펴디 | 몯ᄒᆞᆯ人이하니라 | 내이를爲ᄒᆞ야어엿 |
+  비너겨새로크롬擴張 | 프로그램을밍ᄀᆞ노 | 니人마다ᄒᆡ여날로 |
+  쑤메便安킈ᄒᆞ고져 | ᄒᆞᆯ따ᄅᆞ미니라
 
-  </div>
+  현대어 해석:
+  연구소를 발굴보고서를 파일명은 본래 이름을 담지 못하야
+  이런 차로 파일명 고치고자 할 바 있어도 마침내 제 뜻들을
+  시러 펴지 못할 이가 하니라(많더라) 내 이를 위하야 어여삐
+  너겨 새로 크롬 확장프로그램을 만드노니 사람마다 하여 날로
+  쓰매 편안케 하고자 할 따름이니라
+*/
+
+const COLS = 14;
+const ROWS = 9;
+
+// 배열 순서: 열 단위 (index 0 = 맨 오른쪽 열, 위→아래)
+// 각 항목: [글자] 또는 [글자, 한글주석]
+const data = [
+  // ── 열 0 (맨 오른쪽) ──
+  ['研','연'],['究','구'],['所','소'],['ᄋ'],['ᆞ'],['ᆯ'],['發','발'],['掘','굴'],['報','보'],
+
+  // ── 열 1 ──
+  ['告','고'],['書','셔'],['ᄋ'],['ᆞ'],['ᆯ'],['파'],['일'],['名','명'],['ᄋ'],
+
+  // ── 열 2 ──
+  ['ᆞ'],['ᆫ'],['本','본'],['來','래'],['이'],['름'],['ᄋ'],['ᆞ'],['ᆯ'],
+
+  // ── 열 3 ──
+  ['담'],['디'],['몯'],['ᄒ'],['ᆞ'],['야'],['이'],['런'],['전'],
+
+  // ── 열 4 ──
+  ['ᄎ'],['ᆞ'],['로'],['파'],['일'],['名','명'],['고'],['티'],['고'],
+
+  // ── 열 5 ──
+  ['져'],['ᄒ'],['ᆞ'],['ᆯ'],['빼'],['이'],['셔'],['도'],['마'],
+
+  // ── 열 6 ──
+  ['참'],['내'],['제'],['意','의'],['들'],['시'],['러'],['펴'],['디'],
+
+  // ── 열 7 ──
+  ['몯'],['ᄒ'],['ᆞ'],['ᆯ'],['人','인'],['이'],['하'],['니'],['라'],
+
+  // ── 열 8 ──
+  ['내'],['이'],['를'],['爲','위'],['ᄒ'],['ᆞ'],['야'],['어'],['엿'],
+
+  // ── 열 9 ──
+  ['비'],['너'],['겨'],['새'],['로'],['크'],['롬'],['擴','확'],['張','장'],
+
+  // ── 열 10 ──
+  ['프'],['로'],['그'],['램'],['을'],['밍'],['ᄀ'],['ᆞ'],['노'],
+
+  // ── 열 11 ──
+  ['니'],['人','인'],['마'],['다'],['ᄒ'],['ᆡ'],['여'],['날'],['로'],
+
+  // ── 열 12 ──
+  ['쑤'],['메'],['便','편'],['安','안'],['킈'],['ᄒ'],['ᆞ'],['고'],['져'],
+
+  // ── 열 13 (맨 왼쪽) ──
+  ['ᄒ'],['ᆞ'],['ᆯ'],['따'],['ᄅ'],['ᆞ'],['미'],['니'],['라'],
+];
+
+// CSS Grid에 명시적 배치
+const grid = document.getElementById('grid');
+
+data.forEach(([char, ann], idx) => {
+  const dataCol = Math.floor(idx / ROWS); // 0 = 맨 오른쪽
+  const dataRow = idx % ROWS;             // 0 = 맨 위
+
+  // CSS grid: col 14 = 맨 오른쪽, col 1 = 맨 왼쪽
+  const cssCol = COLS - dataCol;
+  const cssRow = dataRow + 1;
+
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  cell.style.gridColumn = cssCol;
+  cell.style.gridRow = cssRow;
+  cell.textContent = char;
+
+  if (ann) {
+    const span = document.createElement('span');
+    span.className = 'ann';
+    span.textContent = ann;
+    cell.appendChild(span);
+  }
+
+  grid.appendChild(cell);
+});
+</script>
 </body>
 </html>
