@@ -7,11 +7,13 @@ const path = require("node:path");
 const filename = require("../src/filename.js");
 global.ArchReportFilename = filename;
 const extractors = require("../src/page-extractors.js");
+const background = require("../src/background.js");
 
 function fakeControl(attrs) {
   return {
     dataset: attrs.dataset || {},
     textContent: attrs.textContent || "",
+    value: attrs.value || "",
     getAttribute(name) {
       return attrs[name] || "";
     },
@@ -37,27 +39,41 @@ function fakeHeader(label, value) {
   };
 }
 
-function fakeDocumentForEminwon() {
+function fakeDocumentForEminwon(fileNames, options) {
+  const uploadedFiles = fileNames || ["울산 서하리 240-1번지 유적.pdf"];
+  const opts = options || {};
   return {
     querySelectorAll(selector) {
       if (selector === "th, dt") {
-        return [
-          fakeHeader("허가번호", "2024-0607"),
-          fakeHeader("보고서명", "울산 서하리 240-1번지 유적"),
+        const headers = [
+          fakeHeader("허가번호", opts.permitNumber || "2024-0607"),
           fakeHeader("유적명(사업명)", "울산 서하리(240-1번지) 축사 신축부지 내 유적(국비)"),
-          fakeHeader("발간기관", "(재)한울문화유산연구원"),
-          fakeHeader("제출일", "2026-06-09"),
-          fakeHeader("조사 시도", "울산"),
-          fakeHeader("조사 시군구", "울주군")
+          fakeHeader("발간기관", opts.agency || "(재)한울문화유산연구원"),
+          fakeHeader("제출일", opts.submittedDate || "2026-06-09"),
+          fakeHeader("조사 시도", opts.province || "울산"),
+          fakeHeader("조사 시군구", opts.district || "울주군")
         ];
+        if (!opts.omitReportTitle) {
+          headers.splice(1, 0, fakeHeader("보고서명", opts.reportTitle || "울산 서하리 240-1번지 유적"));
+        }
+        return headers;
       }
       if (selector === "script") {
         return [{
-          textContent: "RAONKUPLOAD.AddUploadedFile('0', \"울산 서하리 240-1번지 유적.pdf\", \"encoded\", \"95297915\", \"{}\", upload1.ID);"
+          textContent: uploadedFiles.map((fileName, index) =>
+            `RAONKUPLOAD.AddUploadedFile('${index}', "${fileName}", "encoded-${index}", "95297915", "{}", upload1.ID);`
+          ).join("\n")
         }];
       }
+      if (selector === "main h1" || selector === "h1") {
+        return opts.headingText ? [{ textContent: opts.headingText }] : [];
+      }
       return [];
-    }
+    },
+    querySelector() {
+      return null;
+    },
+    title: opts.title || ""
   };
 }
 
@@ -199,4 +215,92 @@ test("e-minwon detail table exposes report metadata and RAON file name", () => {
   assert.equal(context.province, "울산");
   assert.equal(context.district, "울주군");
   assert.equal(rendered, "(재)한울문화유산연구원, 2026, 울산 서하리 240-1번지 유적.pdf");
+});
+
+test("e-minwon multi-file contexts keep RAON order and add sequence numbers", () => {
+  const contexts = extractors.extractEminwonContextsFromDocument(fakeDocumentForEminwon([
+    "경주읍성 III 보고서-1.pdf",
+    "경주읍성 III 보고서-2.pdf",
+    "경주읍성 III 보고서-3.pdf"
+  ]));
+  const rendered = contexts.map((context) => filename.renderFilename(context, filename.mergeSettings()));
+
+  assert.equal(contexts.length, 3);
+  assert.deepEqual(contexts.map((context) => context.originalFilename), [
+    "경주읍성 III 보고서-1.pdf",
+    "경주읍성 III 보고서-2.pdf",
+    "경주읍성 III 보고서-3.pdf"
+  ]);
+  assert.deepEqual(contexts.map((context) => context.sequenceNumber), ["1", "2", "3"]);
+  assert.deepEqual(rendered, [
+    "(재)한울문화유산연구원, 2026, 울산 서하리 240-1번지 유적 1.pdf",
+    "(재)한울문화유산연구원, 2026, 울산 서하리 240-1번지 유적 2.pdf",
+    "(재)한울문화유산연구원, 2026, 울산 서하리 240-1번지 유적 3.pdf"
+  ]);
+});
+
+test("e-minwon derives report title from RAON file names when table has no report title", () => {
+  const contexts = extractors.extractEminwonContextsFromDocument(fakeDocumentForEminwon([
+    "경주읍성Ⅲ 보고서-1.pdf",
+    "경주읍성Ⅲ 보고서-2.pdf",
+    "경주읍성Ⅲ 보고서-3.pdf",
+    "경주읍성Ⅲ 보고서-별지.pdf"
+  ], {
+    omitReportTitle: true,
+    agency: "국가유산진흥원",
+    submittedDate: "2024-01-11"
+  }));
+  const rendered = contexts.map((context) => filename.renderFilename(context, filename.mergeSettings()));
+
+  assert.equal(contexts.length, 4);
+  assert.equal(contexts[0].reportTitle, "경주읍성Ⅲ");
+  assert.equal(contexts[0].agency, "국가유산진흥원");
+  assert.equal(contexts[0].year, "2024");
+  assert.deepEqual(rendered, [
+    "국가유산진흥원, 2024, 경주읍성Ⅲ 1.pdf",
+    "국가유산진흥원, 2024, 경주읍성Ⅲ 2.pdf",
+    "국가유산진흥원, 2024, 경주읍성Ⅲ 3.pdf",
+    "국가유산진흥원, 2024, 경주읍성Ⅲ 4.pdf"
+  ]);
+});
+
+test("report title fallback rejects e-minwon search filter text", () => {
+  const title = extractors.extractReportTitleFromDocument(fakeDocumentForEminwon([], {
+    omitReportTitle: true,
+    headingText: "조사시도 시도 서울 부산 대구 인천 광주 대전 울산 세종 경기 강원 충북 충남 전북 전남 경북 경남 제주 시군구 제출년도 2026 2025 2024 2023 2022 2021 2020"
+  }));
+
+  assert.equal(title, "");
+});
+
+test("e-minwon bulk target planner intercepts only multi-file downloads", () => {
+  assert.equal(extractors.classifyEminwonDownloadControl(fakeControl({ value: "전체 다운로드" })), "all");
+  assert.equal(extractors.classifyEminwonDownloadControl(fakeControl({ value: "다운로드" })), "download");
+  assert.deepEqual(extractors.chooseEminwonDownloadTargetIndexes(4, [0, 2], "all"), [0, 1, 2, 3]);
+  assert.deepEqual(extractors.chooseEminwonDownloadTargetIndexes(4, [0, 2], "download"), [0, 2]);
+  assert.deepEqual(extractors.chooseEminwonDownloadTargetIndexes(4, [2], "download"), []);
+  assert.deepEqual(extractors.chooseEminwonDownloadTargetIndexes(1, [0], "all"), []);
+});
+
+test("background identifies e-minwon ZIP downloads from remembered frames", () => {
+  background._state.reset();
+  background.rememberTabSource(7, "e-minwon", "https://www.e-minwon.go.kr/example", 3);
+
+  assert.equal(background.isZipDownload({ filename: "download.zip" }), true);
+  assert.deepEqual(background.eminwonFrameIds(7), [3]);
+  assert.equal(background.isLikelyEminwonDownload({
+    id: 11,
+    tabId: 7,
+    filename: "download.zip"
+  }), true);
+});
+
+test("background cleanup prunes stale ZIP states", () => {
+  background._state.reset();
+  background.zipState(9);
+  assert.equal(Boolean(background._state.zipDownloadStates["9"]), true);
+
+  background.cleanupContexts(Date.now() + 11 * 60 * 1000);
+
+  assert.equal(Boolean(background._state.zipDownloadStates["9"]), false);
 });

@@ -404,6 +404,7 @@
   function setupCitation() {
     const citationInput = document.getElementById("citation-input");
     const copyBtn = document.getElementById("copy-citation-btn");
+    const unusableTitlePattern = /직접입력|자동\s*연계\s*공개|궁금하신\s*사항|국가유산\s*협업포털|조사시도\s*시도|서울\s+부산\s+대구/;
     
     if (!citationInput || !copyBtn) return;
     
@@ -421,22 +422,40 @@
       return parts.join(", ");
     };
 
+    const isUsableReportMetadata = (meta) => {
+      const title = filename.normalizeSpaces(meta && meta.reportTitle);
+      return Boolean(title) &&
+        title.length <= 120 &&
+        !unusableTitlePattern.test(title);
+    };
+
+    const showCopiedState = () => {
+      const originalText = copyBtn.textContent;
+      copyBtn.textContent = "복사됨!";
+      copyBtn.style.background = "#15803d";
+      copyBtn.style.borderColor = "#15803d";
+      setTimeout(() => {
+        copyBtn.textContent = originalText;
+        copyBtn.style.background = "";
+        copyBtn.style.borderColor = "";
+      }, 1500);
+    };
+
+    copyBtn.addEventListener("click", () => {
+      const value = citationInput.value;
+      if (!value) {
+        return;
+      }
+      navigator.clipboard.writeText(value)
+        .then(showCopiedState)
+        .catch((err) => {
+          console.error("Failed to copy text: ", err);
+        });
+    });
+
     if (typeof chrome === "undefined" || !chrome.tabs) {
       citationInput.value = "(재)한울문화유산연구원, 2026, 『울산 서하리 240-1번지 유적』";
       copyBtn.disabled = false;
-      copyBtn.addEventListener("click", () => {
-        navigator.clipboard.writeText(citationInput.value).then(() => {
-          const originalText = copyBtn.textContent;
-          copyBtn.textContent = "복사됨!";
-          copyBtn.style.background = "#15803d";
-          copyBtn.style.borderColor = "#15803d";
-          setTimeout(() => {
-            copyBtn.textContent = originalText;
-            copyBtn.style.background = "";
-            copyBtn.style.borderColor = "";
-          }, 1500);
-        });
-      });
       return;
     }
 
@@ -483,40 +502,38 @@
           };
           updatePreview();
 
-          // Copy button action
-          copyBtn.addEventListener("click", () => {
-            navigator.clipboard.writeText(citationValue).then(() => {
-              const originalText = copyBtn.textContent;
-              copyBtn.textContent = "복사됨!";
-              copyBtn.style.background = "#15803d";
-              copyBtn.style.borderColor = "#15803d";
-              setTimeout(() => {
-                copyBtn.textContent = originalText;
-                copyBtn.style.background = "";
-                copyBtn.style.borderColor = "";
-              }, 1500);
-            }).catch(err => {
-              console.error("Failed to copy text: ", err);
-            });
+        };
+
+        const askCurrentTab = () => {
+          chrome.tabs.sendMessage(activeTab.id, { type: "get-report-title" }, (response) => {
+            if (!chrome.runtime.lastError && isUsableReportMetadata(response)) {
+              applyMetadata(response);
+              return;
+            }
+            if (isUsableReportMetadata(cached)) {
+              applyMetadata(cached);
+              return;
+            }
+            citationInput.value = "";
+            citationInput.placeholder = "보고서 상세 페이지가 아닙니다.";
+            copyBtn.disabled = true;
           });
         };
 
-        if (cached && cached.reportTitle) {
+        if (/e-minwon\.go\.kr/.test(url)) {
+          askCurrentTab();
+        } else if (isUsableReportMetadata(cached)) {
           applyMetadata(cached);
         } else {
           // Fallback: Ask content script directly
           chrome.tabs.sendMessage(activeTab.id, { type: "get-report-title" }, (response) => {
-            if (chrome.runtime.lastError || !response || !response.reportTitle) {
+            if (chrome.runtime.lastError || !isUsableReportMetadata(response)) {
               citationInput.value = "";
               citationInput.placeholder = "보고서 상세 페이지가 아닙니다.";
               copyBtn.disabled = true;
               return;
             }
-            applyMetadata({
-              reportTitle: response.reportTitle,
-              year: "",
-              agency: ""
-            });
+            applyMetadata(response);
           });
         }
       });

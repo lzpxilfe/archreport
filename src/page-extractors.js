@@ -21,6 +21,46 @@
       .replace(/&#39;/g, "'");
   }
 
+  const REPORT_TITLE_SELECTOR_CANDIDATES = [
+    "main h1",
+    "main h2",
+    "main h3",
+    "#contents h1",
+    "#contents h2",
+    "#contents h3",
+    "#content h1",
+    "#content h2",
+    "#content h3",
+    ".detail_view h3",
+    ".detail h3",
+    ".view h3",
+    "h1",
+    "h2",
+    "h3"
+  ];
+
+  const REPORT_TITLE_REJECT_EXACT = new Set([
+    "\uAD6D\uAC00\uC720\uC0B0 \uAC04\uD589\uBB3C",
+    "\uBCF4\uACE0\uC11C",
+    "\uBC1C\uAC04\uC790\uB8CC",
+    "\uBCF8\uBB38",
+    "\uC5F0\uAD6C\uC131\uACFC",
+    "\uAD6D\uAC00\uC720\uC0B0 \uC9C0\uC2DD\uC774\uC74C"
+  ]);
+
+  const REPORT_TITLE_REJECT_PATTERNS = [
+    /\uC870\uC0AC\s*\uC2DC\uB3C4.*\uC81C\uCD9C\s*\uB144\uB3C4/,
+    /\uC11C\uC6B8\s+\uBD80\uC0B0\s+\uB300\uAD6C/,
+    /2026\s+2025\s+2024\s+2023/
+  ];
+
+  const EMINWON_DOWNLOAD_PATTERNS = {
+    allText: /\uC804\uCCB4\s*(\uB2E4\uC6B4\uB85C\uB4DC|\uB2E4\uC6B4|\uB0B4\uB824\uBC1B\uAE30)|\uBAA8\uB450\s*(\uB2E4\uC6B4\uB85C\uB4DC|\uB2E4\uC6B4|\uB0B4\uB824\uBC1B\uAE30)/i,
+    allSource: /\b(allDown|all_down|down_all|downloadAll|allDownload|allFileDown|fn_all_download|fn_download_all|fn_file_all_down|ZipDownload|fileZip|zipDown)\b/i,
+    downloadText: /\uC120\uD0DD\s*(\uB2E4\uC6B4\uB85C\uB4DC|\uB2E4\uC6B4|\uB0B4\uB824\uBC1B\uAE30)|(?:^|\s)(\uB2E4\uC6B4\uB85C\uB4DC|\uB0B4\uB824\uBC1B\uAE30)(?:\s|$)/i,
+    downloadSource: /\b(downloadFile|fileDownload|fn_file_download)\b/i
+  };
+
   function parseJsCallArgs(source, functionName) {
     const text = String(source || "");
     const start = text.indexOf(`${functionName}(`);
@@ -200,19 +240,69 @@
     return files;
   }
 
-  function extractEminwonContextFromDocument(doc) {
-    const facts = extractTableFactsFromDocument(doc);
-    if (!facts.reportTitle) {
-      return null;
+  function stripPdfExtension(value) {
+    const helper = global.ArchReportFilename;
+    if (helper && helper.stripPdfExtension) {
+      return helper.stripPdfExtension(value);
+    }
+    return String(value || "").replace(/\.pdf$/i, "");
+  }
+
+  function cleanupReportTitleCandidate(value) {
+    return normalizeSpaces(stripPdfExtension(value)
+      .replace(/\s*(?:보고서)?\s*[-_]\s*(?:\d+|별지|부록.*|첨부.*)$/i, "")
+      .replace(/\s+보고서\s*(?:\d+|별지|부록.*|첨부.*)$/i, "")
+      .replace(/\s+(?:제\s*)?\d+\s*권(?:\([^)]*\))?$/i, ""));
+  }
+
+  function commonPrefix(values) {
+    if (!values.length) {
+      return "";
+    }
+    let prefix = values[0];
+    for (const value of values.slice(1)) {
+      while (prefix && !value.startsWith(prefix)) {
+        prefix = prefix.slice(0, -1);
+      }
+      if (!prefix) {
+        return "";
+      }
+    }
+    return normalizeSpaces(prefix.replace(/[-_\s]+$/g, ""));
+  }
+
+  function deriveReportTitleFromUploadedFiles(files) {
+    const candidates = (files || [])
+      .map((file) => cleanupReportTitleCandidate(file.fileTitle || ""))
+      .filter(Boolean);
+    if (candidates.length === 0) {
+      return "";
     }
 
+    const unique = Array.from(new Set(candidates));
+    if (unique.length === 1) {
+      return unique[0];
+    }
+
+    const prefix = commonPrefix(unique);
+    return prefix.length >= 4 ? cleanupReportTitleCandidate(prefix) : unique[0];
+  }
+
+  function extractEminwonContextFromDocument(doc) {
+    const facts = extractTableFactsFromDocument(doc);
     const scripts = Array.from(doc.querySelectorAll("script"))
       .map((script) => script.textContent || "")
       .join("\n");
     const files = parseRaonUploadedFiles(scripts);
     const firstFile = files[0] || {};
+    const reportTitle = facts.reportTitle || deriveReportTitleFromUploadedFiles(files);
+
+    if (!reportTitle) {
+      return null;
+    }
 
     return Object.assign({}, facts, {
+      reportTitle,
       sourceKind: "e-minwon",
       fileTitle: firstFile.fileTitle || "",
       originalFilename: firstFile.fileTitle || "",
@@ -222,17 +312,19 @@
 
   function extractEminwonContextsFromDocument(doc) {
     const facts = extractTableFactsFromDocument(doc);
-    if (!facts.reportTitle) {
-      return [];
-    }
-
     const scripts = Array.from(doc.querySelectorAll("script"))
       .map((script) => script.textContent || "")
       .join("\n");
     const files = parseRaonUploadedFiles(scripts);
+    const reportTitle = facts.reportTitle || deriveReportTitleFromUploadedFiles(files);
+
+    if (!reportTitle) {
+      return [];
+    }
 
     if (files.length === 0) {
       return [Object.assign({}, facts, {
+        reportTitle,
         sourceKind: "e-minwon",
         fileTitle: "",
         originalFilename: "",
@@ -247,6 +339,7 @@
         sequenceNumber = String(index + 1);
       }
       return Object.assign({}, facts, {
+        reportTitle,
         sourceKind: "e-minwon",
         fileTitle: file.fileTitle || "",
         originalFilename: file.fileTitle || "",
@@ -266,38 +359,19 @@
       return facts.reportTitle;
     }
 
-    const rejected = new Set([
-      "국가유산 간행물",
-      "보고서",
-      "발간자료",
-      "본문",
-      "연구성과",
-      "국가유산 지식이음"
-    ]);
+    function isUsableReportTitle(text) {
+      const normalized = normalizeSpaces(text);
+      return normalized.length >= 4 &&
+        normalized.length <= 120 &&
+        !REPORT_TITLE_REJECT_EXACT.has(normalized) &&
+        !REPORT_TITLE_REJECT_PATTERNS.some((pattern) => pattern.test(normalized));
+    }
 
-    const selectors = [
-      "main h1",
-      "main h2",
-      "main h3",
-      "#contents h1",
-      "#contents h2",
-      "#contents h3",
-      "#content h1",
-      "#content h2",
-      "#content h3",
-      ".detail_view h3",
-      ".detail h3",
-      ".view h3",
-      "h1",
-      "h2",
-      "h3"
-    ];
-
-    for (const selector of selectors) {
+    for (const selector of REPORT_TITLE_SELECTOR_CANDIDATES) {
       const elements = Array.from(doc.querySelectorAll(selector));
       for (const element of elements) {
         const text = normalizeSpaces(element.textContent);
-        if (text.length >= 4 && !rejected.has(text)) {
+        if (isUsableReportTitle(text)) {
           return text;
         }
       }
@@ -305,7 +379,8 @@
 
     const metaTitle = doc.querySelector("meta[property='og:title'], meta[name='title']");
     const title = normalizeSpaces((metaTitle && metaTitle.content) || doc.title || "");
-    return normalizeSpaces(title.split("|")[0].replace(/국가유산포털|국가유산 지식이음/g, ""));
+    const cleaned = normalizeSpaces(title.split("|")[0].replace(/국가유산포털|국가유산 지식이음/g, ""));
+    return isUsableReportTitle(cleaned) ? cleaned : "";
   }
 
   function getControlSource(control) {
@@ -315,6 +390,71 @@
     const href = control.getAttribute && control.getAttribute("href");
     const onclick = control.getAttribute && control.getAttribute("onclick");
     return `${href || ""} ${onclick || ""}`;
+  }
+
+  function controlSearchText(control) {
+    if (!control) {
+      return "";
+    }
+    let text = [
+      control.textContent || "",
+      control.value || "",
+      control.getAttribute && control.getAttribute("title"),
+      control.getAttribute && control.getAttribute("alt"),
+      control.getAttribute && control.getAttribute("class"),
+      control.getAttribute && control.getAttribute("id")
+    ].join(" ");
+    const images = control.querySelectorAll ? control.querySelectorAll("img") : [];
+    for (const img of images) {
+      text += " " + [
+        img.getAttribute("alt"),
+        img.getAttribute("title"),
+        img.getAttribute("src")
+      ].join(" ");
+    }
+    return normalizeSpaces(text);
+  }
+
+  function classifyEminwonDownloadControl(control) {
+    const text = controlSearchText(control);
+    const source = getControlSource(control);
+    const combined = `${text} ${source}`;
+
+    if (
+      EMINWON_DOWNLOAD_PATTERNS.allText.test(text) ||
+      EMINWON_DOWNLOAD_PATTERNS.allSource.test(combined)
+    ) {
+      return "all";
+    }
+
+    if (
+      EMINWON_DOWNLOAD_PATTERNS.downloadText.test(text) ||
+      EMINWON_DOWNLOAD_PATTERNS.downloadSource.test(source)
+    ) {
+      return "download";
+    }
+
+    return "";
+  }
+
+  function chooseEminwonDownloadTargetIndexes(fileCount, checkedIndexes, triggerKind) {
+    const count = Number(fileCount) || 0;
+    if (count <= 1) {
+      return [];
+    }
+
+    if (triggerKind === "all") {
+      return Array.from({ length: count }, (_value, index) => index);
+    }
+
+    if (triggerKind === "download") {
+      const selected = Array.from(new Set((checkedIndexes || [])
+        .map((index) => Number(index))
+        .filter((index) => Number.isInteger(index) && index >= 0 && index < count)));
+      return selected.length > 1 ? selected : [];
+    }
+
+    return [];
   }
 
   function parseDownloadControl(control) {
@@ -371,12 +511,7 @@
       return false;
     }
     const source = getControlSource(control);
-    let text = (control.textContent || "").trim() + " " + (control.getAttribute("title") || "");
-    const images = control.querySelectorAll ? control.querySelectorAll("img") : [];
-    for (const img of images) {
-      text += " " + (img.getAttribute("alt") || "") + " " + (img.getAttribute("title") || "");
-    }
-    text = normalizeSpaces(text);
+    const text = controlSearchText(control);
 
     return Boolean(
       (control.dataset && (control.dataset.url || control.dataset.filename)) ||
@@ -391,7 +526,11 @@
   }
 
   const api = {
+    chooseEminwonDownloadTargetIndexes,
+    classifyEminwonDownloadControl,
+    controlSearchText,
     decodeHtmlEntities,
+    deriveReportTitleFromUploadedFiles,
     extractAgencyFromText,
     extractEminwonContextFromDocument,
     extractEminwonContextsFromDocument,

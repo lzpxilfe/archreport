@@ -1,14 +1,44 @@
-importScripts("filename.js");
+if (typeof importScripts === "function") {
+  importScripts("filename.js");
+} else if (typeof require === "function" && typeof globalThis.ArchReportFilename === "undefined") {
+  globalThis.ArchReportFilename = require("./filename.js");
+}
 
 const MESSAGE_TYPE = "arch-report-download-context";
+const PAGE_READY_TYPE = "arch-report-page-ready";
+const START_EMINWON_QUEUE_TYPE = "arch-report-start-eminwon-download-queue";
 const STORAGE_KEY = "archReportSettings";
 const CONTEXT_TTL_MS = 30 * 60 * 1000;
 const MAX_CONTEXTS = 30;
+const DOWNLOAD_STATE_TTL_MS = 10 * 60 * 1000;
+const ZIP_REMOVE_RETRY_DELAYS_MS = [0, 500, 2000];
+const EMINWON_HOST = "e-minwon.go.kr";
+const DOWNLOAD_DEBUG_PREFIX = "[archreport]";
 
 let settingsCache = ArchReportFilename.mergeSettings();
 let pendingContexts = [];
+let tabSources = {};
+let zipDownloadStates = {};
+
+function hasChromeApi(path) {
+  let current = typeof chrome !== "undefined" ? chrome : null;
+  for (const key of path) {
+    current = current && current[key];
+  }
+  return Boolean(current);
+}
+
+function debugWarn(message, detail) {
+  if (typeof console === "undefined" || !console.warn) {
+    return;
+  }
+  console.warn(`${DOWNLOAD_DEBUG_PREFIX} ${message}`, detail || "");
+}
 
 function loadSettings() {
+  if (!hasChromeApi(["storage", "sync", "get"])) {
+    return;
+  }
   chrome.storage.sync.get(STORAGE_KEY, (result) => {
     settingsCache = ArchReportFilename.mergeSettings(result && result[STORAGE_KEY]);
   });
@@ -18,6 +48,18 @@ function cleanupContexts(now) {
   pendingContexts = pendingContexts
     .filter((entry) => now - entry.context.capturedAt < CONTEXT_TTL_MS)
     .slice(-MAX_CONTEXTS);
+
+  for (const [tabId, entry] of Object.entries(tabSources)) {
+    if (!entry || now - entry.capturedAt >= CONTEXT_TTL_MS) {
+      delete tabSources[tabId];
+    }
+  }
+
+  for (const [downloadId, state] of Object.entries(zipDownloadStates)) {
+    if (!state || now - state.createdAt >= DOWNLOAD_STATE_TTL_MS) {
+      delete zipDownloadStates[downloadId];
+    }
+  }
 }
 
 function normalizeUrl(value) {
@@ -50,6 +92,241 @@ function basename(value) {
   return ArchReportFilename.filenameFromUrl(value || "");
 }
 
+function downloadValues(item) {
+  return [
+    item && item.filename,
+    item && item.finalUrl,
+    item && item.url,
+    item && item.referrer,
+    item && item.tabUrl
+  ].map((value) => String(value || ""));
+}
+
+function isZipDownload(item) {
+  return downloadValues(item).some((value) => /\.zip(?:[?#].*)?$/i.test(value)) ||
+    /zip/i.test(String((item && item.mime) || ""));
+}
+
+function hasEminwonUrl(item) {
+  return downloadValues(item).some((value) => value.includes(EMINWON_HOST));
+}
+
+function ensureTabSource(tabId) {
+  const key = String(tabId);
+  if (!tabSources[key]) {
+    tabSources[key] = {
+      source: "unknown",
+      pageUrl: "",
+      frames: {},
+      capturedAt: Date.now()
+    };
+  }
+  if (!tabSources[key].frames) {
+    tabSources[key].frames = {};
+  }
+  return tabSources[key];
+}
+
+function rememberTabSource(tabId, source, pageUrl, frameId) {
+  if (!Number.isInteger(tabId) || tabId < 0 || !source) {
+    return;
+  }
+
+  const entry = ensureTabSource(tabId);
+  const isEminwon = source === "e-minwon" || String(pageUrl || "").includes(EMINWON_HOST);
+  if (isEminwon || entry.source === "unknown") {
+    entry.source = isEminwon ? "e-minwon" : source;
+  }
+  if (pageUrl) {
+    entry.pageUrl = pageUrl;
+  }
+  entry.capturedAt = Date.now();
+
+  if (Number.isInteger(frameId) && frameId >= 0) {
+    entry.frames[String(frameId)] = {
+      source,
+      pageUrl: pageUrl || "",
+      capturedAt: entry.capturedAt
+    };
+  }
+}
+
+function tabSource(tabId) {
+  cleanupContexts(Date.now());
+  return tabSources[String(tabId)] || null;
+}
+
+function eminwonFrameIds(tabId) {
+  const source = tabSource(tabId);
+  if (!source || !source.frames) {
+    return [];
+  }
+  return Object.entries(source.frames)
+    .filter(([, frame]) =>
+      frame &&
+      (frame.source === "e-minwon" || String(frame.pageUrl || "").includes(EMINWON_HOST))
+    )
+    .map(([frameId]) => Number(frameId))
+    .filter((frameId) => Number.isInteger(frameId) && frameId >= 0);
+}
+
+function isLikelyEminwonDownload(item) {
+  if (hasEminwonUrl(item)) {
+    return true;
+  }
+
+  const source = item && Number.isInteger(item.tabId) ? tabSource(item.tabId) : null;
+  if (source && (source.source === "e-minwon" || String(source.pageUrl || "").includes(EMINWON_HOST))) {
+    return true;
+  }
+
+  return pendingContexts.some((entry) =>
+    entry.context &&
+    entry.context.source === "e-minwon" &&
+    item &&
+    item.tabId >= 0 &&
+    entry.tabId === item.tabId
+  );
+}
+
+function zipState(downloadId) {
+  const key = String(downloadId);
+  if (!zipDownloadStates[key]) {
+    zipDownloadStates[key] = {
+      createdAt: Date.now(),
+      cancelRequested: false,
+      queueRequested: false,
+      removeAttempts: 0
+    };
+  }
+  return zipDownloadStates[key];
+}
+
+function sendQueueMessage(tabId, frameId, payload, callback) {
+  const handleResponse = (response) => {
+    const error = chrome.runtime.lastError;
+    callback(error, response, frameId);
+  };
+
+  if (Number.isInteger(frameId)) {
+    chrome.tabs.sendMessage(tabId, payload, { frameId }, handleResponse);
+    return;
+  }
+
+  chrome.tabs.sendMessage(tabId, payload, handleResponse);
+}
+
+function requestEminwonQueue(downloadItem) {
+  if (!downloadItem || downloadItem.tabId < 0 || !hasChromeApi(["tabs", "sendMessage"])) {
+    return;
+  }
+
+  const state = zipState(downloadItem.id);
+  if (state.queueRequested) {
+    return;
+  }
+  state.queueRequested = true;
+
+  const payload = {
+    type: START_EMINWON_QUEUE_TYPE,
+    downloadId: downloadItem.id
+  };
+  const frameIds = Array.from(new Set(eminwonFrameIds(downloadItem.tabId)));
+  const targets = frameIds.length ? frameIds : [null];
+  let finished = false;
+
+  targets.forEach((frameId) => {
+    sendQueueMessage(downloadItem.tabId, frameId, payload, (error, response, respondedFrameId) => {
+      if (finished) {
+        return;
+      }
+      if (error) {
+        debugWarn("e-minwon queue message failed", {
+          downloadId: downloadItem.id,
+          frameId: respondedFrameId,
+          message: error.message
+        });
+        return;
+      }
+      if (response && response.started) {
+        finished = true;
+        return;
+      }
+      debugWarn("e-minwon queue did not start", {
+        downloadId: downloadItem.id,
+        frameId: respondedFrameId,
+        reason: response && response.reason,
+        detail: response && response.detail
+      });
+    });
+  });
+}
+
+function removeZipArtifact(downloadId) {
+  if (!Number.isInteger(downloadId) || !hasChromeApi(["downloads"])) {
+    return;
+  }
+
+  const state = zipState(downloadId);
+  state.removeAttempts += 1;
+
+  if (chrome.downloads.removeFile) {
+    chrome.downloads.removeFile(downloadId, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+  if (chrome.downloads.erase) {
+    chrome.downloads.erase({ id: downloadId }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+}
+
+function scheduleZipRemoval(downloadId) {
+  if (!Number.isInteger(downloadId)) {
+    return;
+  }
+  ZIP_REMOVE_RETRY_DELAYS_MS.forEach((delay) => {
+    setTimeout(() => removeZipArtifact(downloadId), delay);
+  });
+}
+
+function cancelEminwonZip(downloadItem) {
+  if (!downloadItem || !Number.isInteger(downloadItem.id)) {
+    return;
+  }
+
+  const state = zipState(downloadItem.id);
+  requestEminwonQueue(downloadItem);
+
+  if (state.cancelRequested) {
+    scheduleZipRemoval(downloadItem.id);
+    return;
+  }
+
+  state.cancelRequested = true;
+  if (hasChromeApi(["downloads", "cancel"])) {
+    chrome.downloads.cancel(downloadItem.id, () => {
+      void chrome.runtime.lastError;
+      scheduleZipRemoval(downloadItem.id);
+    });
+  } else {
+    scheduleZipRemoval(downloadItem.id);
+  }
+}
+
+function maybeCancelEminwonZip(downloadItem) {
+  if (!isZipDownload(downloadItem)) {
+    return false;
+  }
+  if (!isLikelyEminwonDownload(downloadItem)) {
+    return false;
+  }
+
+  cancelEminwonZip(downloadItem);
+  return true;
+}
+
 function urlScore(context, item) {
   const contextUrl = normalizeUrl(context.downloadUrl);
   const itemUrl = normalizeUrl((item && (item.finalUrl || item.url)) || "");
@@ -70,7 +347,6 @@ function urlScore(context, item) {
     score += 3;
   }
 
-  // Host matching for downloads with tabId: -1
   const contextHost = hostFromUrl(context.pageUrl);
   const itemHost = hostFromUrl(itemUrl);
   if (contextHost && itemHost && contextHost === itemHost) {
@@ -116,90 +392,165 @@ function chooseContext(item) {
   return best.entry.context;
 }
 
-chrome.runtime.onInstalled.addListener(loadSettings);
-chrome.runtime.onStartup.addListener(loadSettings);
-loadSettings();
-
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "sync" || !changes[STORAGE_KEY]) {
-    return;
-  }
-  settingsCache = ArchReportFilename.mergeSettings(changes[STORAGE_KEY].newValue);
-});
-
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (!message) {
+function registerChromeListeners() {
+  if (!hasChromeApi(["runtime"])) {
     return;
   }
 
-  if (message.type === "report-metadata-extracted" && sender && sender.tab) {
-    const tabId = sender.tab.id;
-    const metadata = message.metadata;
-    const key = `reportMetadata_${tabId}`;
-    chrome.storage.local.get(key, (result) => {
-      const existing = result[key];
-      if (!existing || metadata.isTableExtract || !existing.isTableExtract) {
-        chrome.storage.local.set({ [key]: metadata });
+  chrome.runtime.onInstalled.addListener(loadSettings);
+  chrome.runtime.onStartup.addListener(loadSettings);
+  loadSettings();
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "sync" || !changes[STORAGE_KEY]) {
+      return;
+    }
+    settingsCache = ArchReportFilename.mergeSettings(changes[STORAGE_KEY].newValue);
+  });
+
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    if (!message) {
+      return;
+    }
+
+    if (message.type === "report-metadata-extracted" && sender && sender.tab) {
+      const tabId = sender.tab.id;
+      const metadata = message.metadata;
+      const source = metadata && metadata.url && metadata.url.includes(EMINWON_HOST) ? "e-minwon" : "unknown";
+      rememberTabSource(tabId, source, metadata && metadata.url, sender.frameId);
+      const key = `reportMetadata_${tabId}`;
+      chrome.storage.local.get(key, (result) => {
+        const existing = result[key];
+        if (!existing || metadata.isTableExtract || !existing.isTableExtract) {
+          chrome.storage.local.set({ [key]: metadata });
+        }
+      });
+      return;
+    }
+
+    if (message.type === PAGE_READY_TYPE && sender && sender.tab) {
+      rememberTabSource(sender.tab.id, message.source, message.pageUrl, sender.frameId);
+      return;
+    }
+
+    if (message.type === MESSAGE_TYPE && message.context) {
+      const context = ArchReportFilename.withDerivedContext(message.context);
+      context.capturedAt = context.capturedAt || Date.now();
+
+      const tabId = sender && sender.tab ? sender.tab.id : -1;
+      const frameId = sender ? sender.frameId : 0;
+      rememberTabSource(tabId, context.source, context.pageUrl, frameId);
+
+      const existingIndex = pendingContexts.findIndex((entry) =>
+        entry.tabId === tabId &&
+        ((context.downloadUrl && entry.context.downloadUrl === context.downloadUrl) ||
+         (context.originalFilename && entry.context.originalFilename === context.originalFilename))
+      );
+
+      if (existingIndex >= 0) {
+        pendingContexts[existingIndex].context = context;
+      } else {
+        pendingContexts.push({
+          context,
+          tabId,
+          frameId
+        });
+      }
+      cleanupContexts(Date.now());
+    }
+  });
+
+  chrome.action.onClicked.addListener(() => {
+    chrome.runtime.openOptionsPage();
+  });
+
+  chrome.downloads.onCreated.addListener((downloadItem) => {
+    maybeCancelEminwonZip(downloadItem);
+  });
+
+  chrome.downloads.onChanged.addListener((delta) => {
+    if (!delta || !Number.isInteger(delta.id)) {
+      return;
+    }
+    if (!delta.filename && !delta.mime && !delta.url && !delta.state) {
+      return;
+    }
+
+    chrome.downloads.search({ id: delta.id }, (items) => {
+      if (chrome.runtime.lastError || !items || !items[0]) {
+        return;
+      }
+      if (maybeCancelEminwonZip(items[0]) && delta.state) {
+        scheduleZipRemoval(delta.id);
       }
     });
-    return;
-  }
-
-  if (message.type === MESSAGE_TYPE && message.context) {
-    const context = ArchReportFilename.withDerivedContext(message.context);
-    context.capturedAt = context.capturedAt || Date.now();
-
-    const tabId = sender && sender.tab ? sender.tab.id : -1;
-    const frameId = sender ? sender.frameId : 0;
-
-    const existingIndex = pendingContexts.findIndex((entry) =>
-      entry.tabId === tabId &&
-      ((context.downloadUrl && entry.context.downloadUrl === context.downloadUrl) ||
-       (context.originalFilename && entry.context.originalFilename === context.originalFilename))
-    );
-
-    if (existingIndex >= 0) {
-      pendingContexts[existingIndex].context = context;
-    } else {
-      pendingContexts.push({
-        context,
-        tabId,
-        frameId
-      });
-    }
-    cleanupContexts(Date.now());
-  }
-});
-
-chrome.action.onClicked.addListener(() => {
-  chrome.runtime.openOptionsPage();
-});
-
-chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
-  if (!settingsCache.enabled) {
-    suggest();
-    return;
-  }
-
-  const context = chooseContext(downloadItem);
-  if (!context) {
-    suggest();
-    return;
-  }
-
-  const filename = ArchReportFilename.renderFilename(context, settingsCache, downloadItem);
-  suggest({
-    filename,
-    conflictAction: "uniquify"
   });
-});
 
-chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.local.remove([`reportMetadata_${tabId}`]);
-});
+  chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+    if (!settingsCache.enabled) {
+      suggest();
+      return;
+    }
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "loading") {
+    if (maybeCancelEminwonZip(downloadItem)) {
+      suggest();
+      return;
+    }
+
+    const context = chooseContext(downloadItem);
+    if (!context) {
+      suggest();
+      return;
+    }
+
+    const filename = ArchReportFilename.renderFilename(context, settingsCache, downloadItem);
+    suggest({
+      filename,
+      conflictAction: "uniquify"
+    });
+  });
+
+  chrome.tabs.onRemoved.addListener((tabId) => {
     chrome.storage.local.remove([`reportMetadata_${tabId}`]);
-  }
-});
+    delete tabSources[String(tabId)];
+  });
+
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === "loading") {
+      chrome.storage.local.remove([`reportMetadata_${tabId}`]);
+      delete tabSources[String(tabId)];
+    }
+  });
+}
+
+registerChromeListeners();
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    _state: {
+      get pendingContexts() {
+        return pendingContexts;
+      },
+      get tabSources() {
+        return tabSources;
+      },
+      get zipDownloadStates() {
+        return zipDownloadStates;
+      },
+      reset() {
+        pendingContexts = [];
+        tabSources = {};
+        zipDownloadStates = {};
+        settingsCache = ArchReportFilename.mergeSettings();
+      }
+    },
+    cleanupContexts,
+    chooseContext,
+    eminwonFrameIds,
+    isLikelyEminwonDownload,
+    isZipDownload,
+    maybeCancelEminwonZip,
+    rememberTabSource,
+    zipState
+  };
+}
