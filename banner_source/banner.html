@@ -4,13 +4,12 @@
 <meta charset="UTF-8">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@900&display=swap');
-
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
     background: #ffffff;
-    width: 1200px;
-    height: 460px;
+    width: 1060px;
+    height: 480px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -21,19 +20,23 @@
   .container {
     display: flex;
     flex-direction: row-reverse;
-    align-items: center;
-    padding: 30px 36px;
+    align-items: flex-start;
+    padding: 40px 44px;
+    gap: 0;
   }
 
+  /* 38px × 7자 = 266px 고정 높이 → 완전한 직사각형 */
   .col {
     writing-mode: vertical-rl;
-    font-size: 36px;
+    font-size: 38px;
     font-weight: 900;
     color: #1a1a1a;
-    letter-spacing: 0.04em;
-    padding: 0 6px;
+    letter-spacing: 0em;
     line-height: 1.0;
+    padding: 0 7px;
     white-space: nowrap;
+    height: 290px;
+    overflow: hidden;
   }
 
   ruby { ruby-position: right; ruby-align: center; }
@@ -42,27 +45,29 @@
 </head>
 <body>
   <div class="container">
-
-    <div class="col"><ruby>各<rt>각</rt></ruby>연구소</div>
-    <div class="col">발굴<ruby>報<rt>보</rt></ruby><ruby>告<rt>고</rt></ruby><ruby>書<rt>셔</rt></ruby></div>
-    <div class="col">파일<ruby>名<rt>명</rt></ruby>이달아</div>
-    <div class="col"><ruby>旣<rt>긩</rt></ruby><ruby>存<rt>존</rt></ruby>프로그램</div>
-    <div class="col">과서르사맛디</div>
-    <div class="col">아니할쎄이런</div>
-    <div class="col">전차로파일</div>
-    <div class="col"><ruby>名<rt>명</rt></ruby>고티고져</div>
-    <div class="col">할빼이셔도</div>
-    <div class="col">마참내제뜨들</div>
-    <div class="col">시러펴디못할</div>
-    <div class="col">노미하니라내</div>
-    <div class="col">이를<ruby>爲<rt>위</rt></ruby>하야</div>
-    <div class="col">새로크롬<ruby>擴<rt>확</rt></ruby><ruby>張<rt>장</rt></ruby></div>
-    <div class="col">프로그램을</div>
-    <div class="col">밍노니사람마</div>
-    <div class="col">다하야날로쑤메</div>
-    <div class="col"><ruby>便<rt>편</rt></ruby><ruby>安<rt>안</rt></ruby>킈하고져</div>
-    <div class="col">할따름이니라</div>
-
+    <!--
+      읽기 순서(오른쪽→왼쪽, 위→아래):
+      다운로드폴더열 때마다눈물나니 각연구소마다파 일명이서로달라
+      旣存프로그램과 서르사맛디아니 할쎄이런전차로 파일명고치고져
+      할배이셔도마참 내뜻시러편디못 할노미하니라이 를爲하야새로크
+      롬擴張프로그램 을짓노니사람마 다날로쑤메便安 킈할따름이니라
+    -->
+    <div class="col">다운로드폴더열</div>
+    <div class="col">때마다눈물나니</div>
+    <div class="col">각연구소마다파</div>
+    <div class="col">일명이서로달라</div>
+    <div class="col"><ruby>旣<rt>긩</rt></ruby><ruby>存<rt>존</rt></ruby>프로그램과</div>
+    <div class="col">서르사맛디아니</div>
+    <div class="col">할쎄이런전차로</div>
+    <div class="col">파일명고치고져</div>
+    <div class="col">할배이셔도마참</div>
+    <div class="col">내뜻시러편디못</div>
+    <div class="col">할노미하니라이</div>
+    <div class="col">를<ruby>爲<rt>위</rt></ruby>하야새로크</div>
+    <div class="col">롬<ruby>擴<rt>확</rt></ruby><ruby>張<rt>장</rt></ruby>프로그램</div>
+    <div class="col">을짓노니사람마</div>
+    <div class="col">다날로쑤메<ruby>便<rt>편</rt></ruby><ruby>安<rt>안</rt></ruby></div>
+    <div class="col">킈할따름이니라</div>
   </div>
 </body>
 </html>
