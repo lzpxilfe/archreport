@@ -4,22 +4,18 @@
 <meta charset="UTF-8">
 <style>
   @font-face {
-    font-family: 'NanumMyeongjoYetHangulWeb';
-    src: url('NanumMyeongjo-YetHangul.woff2') format('woff2'),
-         url('NanumMyeongjo-YetHangul.woff') format('woff');
+    font-family: 'NanumBarunGothicYetHangulWeb';
+    src: url('NanumBarunGothic-YetHangul.woff2') format('woff2'),
+         url('NanumBarunGothic-YetHangul.woff') format('woff');
     font-weight: normal;
     font-style: normal;
-    font-display: swap; /* Ensures text is visible immediately using fallback */
+    font-display: swap;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
-    background-color: #f4edd8; /* Warm traditional paper base */
-    background-image:
-      radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.4), rgba(0, 0, 0, 0.05)),
-      repeating-linear-gradient(45deg, rgba(139, 90, 43, 0.015) 0px, rgba(139, 90, 43, 0.015) 2px, transparent 2px, transparent 10px),
-      repeating-linear-gradient(-45deg, rgba(139, 90, 43, 0.015) 0px, rgba(139, 90, 43, 0.015) 2px, transparent 2px, transparent 10px);
+    background-color: #ffffff; /* Clean white background */
     width: 1200px;
     height: 630px;
     display: flex;
@@ -27,20 +23,14 @@
     align-items: center;
     overflow: hidden;
     position: relative;
+    font-family: 'NanumBarunGothicYetHangulWeb', 'NanumBarunGothicYetHangul', 'Nanum Barun Gothic Yet Hangul', 'Malgun Gothic', sans-serif;
   }
 
-  /* Traditional book page container */
-  .book-page {
-    background-color: #fdfbf7;
-    padding: 40px 50px;
-    border: 5px double #2c190d; /* Double line border (주란) */
-    box-shadow: 
-      0 15px 35px rgba(0, 0, 0, 0.1),
-      inset 0 0 40px rgba(139, 90, 43, 0.06);
-    position: relative;
+  .content-container {
     display: flex;
     justify-content: center;
     align-items: center;
+    background-color: #ffffff;
   }
 
   /* 9 columns, 10 rows grid */
@@ -58,14 +48,13 @@
     justify-content: center;
     font-size: 38px;
     font-weight: 800;
-    color: #1c1917; /* Charcoal/pine soot black */
+    color: #1c1917; /* Soft charcoal black */
     position: relative;
     line-height: 1;
-    font-family: 'NanumMyeongjoYetHangulWeb', 'NanumMyeongjoYetHangul', 'Nanum Myeongjo', 'Malgun Gothic', serif;
-    text-shadow: 0.3px 0.3px 0.5px rgba(0, 0, 0, 0.6);
+    font-family: 'NanumBarunGothicYetHangulWeb', 'NanumBarunGothicYetHangul', 'Nanum Barun Gothic Yet Hangul', 'Malgun Gothic', sans-serif;
   }
 
-  /* Hanja cell: Hanja on left, Hangul annotation on right */
+  /* Hanja cell layout: Hanja on left, Middle Korean annotation on right */
   .hanja-cell {
     display: flex;
     flex-direction: row;
@@ -78,37 +67,17 @@
     font-size: 38px;
     font-weight: 800;
     color: #1c1917;
-    font-family: 'NanumMyeongjoYetHangulWeb', 'NanumMyeongjoYetHangul', 'Nanum Myeongjo', 'Malgun Gothic', serif;
+    font-family: 'NanumBarunGothicYetHangulWeb', 'NanumBarunGothicYetHangul', 'Nanum Barun Gothic Yet Hangul', 'Malgun Gothic', sans-serif;
   }
 
-  /* Enlarged and bolder Hangul reading next to Hanja */
+  /* Superscript-like Middle Korean annotation on the right */
   .ann {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
-    color: #2c190d;
+    color: #44403c;
     margin-left: 1px;
-    margin-top: -6px; /* Offset upward to align with the center of Hanja */
-    font-family: 'NanumMyeongjoYetHangulWeb', 'NanumMyeongjoYetHangul', 'Nanum Myeongjo', 'Malgun Gothic', serif;
-  }
-
-  /* Red seal stamp (낙관) in the bottom-left margin */
-  .seal {
-    position: absolute;
-    bottom: 25px;
-    left: 25px;
-    border: 2px solid #b91c1c;
-    background: rgba(185, 28, 28, 0.03);
-    color: #b91c1c;
-    font-family: 'NanumMyeongjoYetHangulWeb', 'NanumMyeongjoYetHangul', 'Nanum Myeongjo', 'Malgun Gothic', serif;
-    font-size: 13px;
-    font-weight: 800;
-    line-height: 1.1;
-    padding: 3px 5px;
-    text-align: center;
-    letter-spacing: 1px;
-    opacity: 0.8;
-    transform: rotate(-3deg);
-    box-shadow: inset 0 0 3px rgba(185, 28, 28, 0.1);
+    margin-top: -6px; /* Offset upward to align with the top-right of Hanja */
+    font-family: 'NanumBarunGothicYetHangulWeb', 'NanumBarunGothicYetHangul', 'Nanum Barun Gothic Yet Hangul', 'Malgun Gothic', sans-serif;
   }
 </style>
 </head>
@@ -117,52 +86,38 @@
 <!-- Delayed image to delay the onload event in headless Chrome -->
 <img src="/delay_image.png" style="display:none;">
 
-<div class="book-page">
+<div class="content-container">
   <div id="grid"></div>
-  <div class="seal">
-    考古<br>正名
-  </div>
 </div>
 
 <script>
 /*
-  중세 국어 + 한자 혼용, 9열 × 10행 = 90자
+  중세 국어 + 동국정운식 한자음, 9열 × 10행 = 90자
   읽기 순서: 오른쪽 열 → 왼쪽 열, 위 → 아래
 
-  원문 (현대어):
-  각 연구소의 발굴조사보고서 파일명이 본래의 보고서 이름을 담지 못하여
-  다시 수고를 들여 고치는 일이 반복되고 있다.
-  내가 이를 안타깝게 생각해, 크롬 확장 프로그램을 만드니
-  사람마다 쓰며 날로 편안하게 하고자 할 따름이다.
-
-  중세 국어 변환 (정확히 90자):
-  각 연구소의 -> 各研究所ᄋᆡ
-  발굴조사보고서 -> 發掘調査報告書
-  파일명이 -> 파일名이
-  본래의 보고서 -> 本來ᄋᆡ報告書
-  이름을 담지 못하여 -> 이름ᄋᆞᆯ담디몯ᄒᆞ야
-  다시 수고를 들여 고치는 일이 -> 다시수고ᄅᆞᆯ드려고티ᄂᆞᆫ이리
-  반복되고 있다 -> 거듭ᄒᆞᄂᆞ니라
-  내가 이를 -> 내가이ᄅᆞᆯ
-  어엿비 너겨 -> 어엿비너겨
-  크롬 확장 프로그램을 -> 크롬擴張프로그램ᄋᆞᆯ
-  만드니 -> ᄆᆡᆼᄀᆞ노니
-  사람마다 쓰며 -> 사람마다ᄡᅮ메
-  날로 편안하게 하고자 -> 날로便安킈ᄒᆞ고져
-  할 따름이니라 -> ᄒᆞᆯᄯᆞᄅᆞ미니라
+  중세 국어 및 한자음 구성:
+  열 1: 各(각) 研(ᅀᅧᆫ) 究(규ᇰ) 所(소ᇰ) ᄋᆡ 發(바ᇙ) 掘(구ᇙ) 調(됴ᇰ) 査(사ᇰ) 報(보ᇰ)
+  열 2: 告(고ᇰ) 書(서ᇰ) 파 일 名(며ᇰ) 이 本(본) 來(래ᇰ) ᄋᆡ 報(보ᇰ)
+  열 3: 告(고ᇰ) 書(서ᇰ) 이 름 ᄋᆞᆯ 담 디 몯 ᄒᆞ 야
+  열 4: 다 시 수 고 ᄅᆞᆯ 드 려 고 티 ᄂᆞᆫ
+  열 5: 이 리 거 듭 ᄒᆞ ᄂᆞ 니 라 내 가
+  열 6: 이 ᄅᆞᆯ 어 엿 비 너 겨 크 롬 擴(ᅘᅪᆨ)
+  열 7: 張(쟈ᇰ) 프 로 그 램 ᄋᆞᆯ ᄆᆡᆼ ᄀᆞ 노 니
+  열 8: 사 람 마 다 ᄡᅮ 메 날 로 便(뼌) 安(안)
+  열 9: 킈 ᄒᆞ 고 져 ᄒᆞᆯ ᄯᆞ ᄅᆞ 미 니 라
 */
 const COLS = 9;
 const ROWS = 10;
 
 const data = [
-  // ── 열 1 (맨 오른쪽): 各研究所ᄋᆡ發掘調査 ──
-  ['各','각'], ['研','연'], ['究','구'], ['所','소'], ['ᄋᆡ',''], ['發','발'], ['掘','굴'], ['調','조'], ['査','사'], ['報','보'],
+  // ── 열 1 (맨 오른쪽): 各研究所ᄋᆡ發掘調査報 ──
+  ['各','각'], ['研','ᅀᅧᆫ'], ['究','규ᇰ'], ['所','소ᇰ'], ['ᄋᆡ',''], ['發','바ᇙ'], ['掘','구ᇙ'], ['調','됴ᇰ'], ['査','사ᇰ'], ['報','보ᇰ'],
 
   // ── 열 2: 告書파일名이本來ᄋᆡ報 ──
-  ['告','고'], ['書','서'], ['파',''], ['일',''], ['名','명'], ['이',''], ['本','본'], ['來','래'], ['ᄋᆡ',''], ['報','보'],
+  ['告','고ᇰ'], ['書','서ᇰ'], ['파',''], ['일',''], ['名','며ᇰ'], ['이',''], ['本','본'], ['來','래ᇰ'], ['ᄋᆡ',''], ['報','보ᇰ'],
 
   // ── 열 3: 告書이름ᄋᆞᆯ담디몯ᄒᆞ야 ──
-  ['告','고'], ['書','서'], ['이',''], ['름',''], ['ᄋᆞᆯ',''], ['담',''], ['디',''], ['몯',''], ['ᄒᆞ',''], ['야',''],
+  ['告','고ᇰ'], ['書','서ᇰ'], ['이',''], ['름',''], ['ᄋᆞᆯ',''], ['담',''], ['디',''], ['몯',''], ['ᄒᆞ',''], ['야',''],
 
   // ── 열 4: 다시수고ᄅᆞᆯ드려고티ᄂᆞᆫ ──
   ['다',''], ['시',''], ['수',''], ['고',''], ['ᄅᆞᆯ',''], ['드',''], ['려',''], ['고',''], ['티',''], ['ᄂᆞᆫ',''],
@@ -171,13 +126,13 @@ const data = [
   ['이',''], ['리',''], ['거',''], ['듭',''], ['ᄒᆞ',''], ['ᄂᆞ',''], ['니',''], ['라',''], ['내',''], ['가',''],
 
   // ── 열 6: 이ᄅᆞᆯ어엿비너겨크롬擴 ──
-  ['이',''], ['ᄅᆞᆯ',''], ['어',''], ['엿',''], ['비',''], ['너',''], ['겨',''], ['크',''], ['롬',''], ['擴','확'],
+  ['이',''], ['ᄅᆞᆯ',''], ['어',''], ['엿',''], ['비',''], ['너',''], ['겨',''], ['크',''], ['롬',''], ['擴','ᅘᅪᆨ'],
 
   // ── 열 7: 張프로그램ᄋᆞᆯᄆᆡᆼᄀᆞ노니 ──
-  ['張','장'], ['프',''], ['로',''], ['그',''], ['램',''], ['ᄋᆞᆯ',''], ['ᄆᆡᆼ',''], ['ᄀᆞ',''], ['노',''], ['니',''],
+  ['張','쟈ᇰ'], ['프',''], ['로',''], ['그',''], ['램',''], ['ᄋᆞᆯ',''], ['ᄆᆡᆼ',''], ['ᄀᆞ',''], ['노',''], ['니',''],
 
   // ── 열 8: 사람마다ᄡᅮ메날로便安 ──
-  ['사',''], ['람',''], ['마',''], ['다',''], ['ᄡᅮ',''], ['메',''], ['날',''], ['로',''], ['便','편'], ['安','안'],
+  ['사',''], ['람',''], ['마',''], ['다',''], ['ᄡᅮ',''], ['메',''], ['날',''], ['로',''], ['便','뼌'], ['安','안'],
 
   // ── 열 9 (맨 왼쪽): 킈ᄒᆞ고져ᄒᆞᆯᄯᆞᄅᆞ미니라 ──
   ['킈',''], ['ᄒᆞ',''], ['고',''], ['져',''], ['ᄒᆞᆯ',''], ['ᄯᆞ',''], ['ᄅᆞ',''], ['미',''], ['니',''], ['라','']
@@ -196,11 +151,6 @@ data.forEach(([char, ann], idx) => {
   cell.className = 'cell';
   cell.style.gridColumn = cssCol;
   cell.style.gridRow = cssRow;
-
-  // 세로줄 계선(界線) 추가 (맨 왼쪽 열 제외하고 왼쪽에 선을 그음)
-  if (cssCol > 1) {
-    cell.style.borderLeft = '1px solid rgba(44, 25, 13, 0.22)';
-  }
 
   if (ann) {
     cell.className += ' hanja-cell';
