@@ -6,18 +6,14 @@
 
   const citationTemplate = filename.clone(filename.DEFAULT_TEMPLATE);
   const titleTemplate = [
-    { kind: "field", value: "reportTitle" },
-    { kind: "separator", value: "space" },
-    { kind: "field", value: "sequenceNumber" }
+    { kind: "field", value: "reportTitle" }
   ];
   const archiveTemplate = [
     { kind: "field", value: "agency" },
     { kind: "separator", value: "space" },
     { kind: "field", value: "year" },
     { kind: "separator", value: "space" },
-    { kind: "field", value: "reportTitle" },
-    { kind: "separator", value: "space" },
-    { kind: "field", value: "sequenceNumber" }
+    { kind: "field", value: "reportTitle" }
   ];
   const permitTemplate = [
     { kind: "field", value: "permitNumber" },
@@ -26,9 +22,7 @@
     { kind: "separator", value: "commaSpace" },
     { kind: "field", value: "year" },
     { kind: "separator", value: "commaSpace" },
-    { kind: "field", value: "reportTitle" },
-    { kind: "separator", value: "space" },
-    { kind: "field", value: "sequenceNumber" }
+    { kind: "field", value: "reportTitle" }
   ];
 
   const presets = [

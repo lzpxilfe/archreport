@@ -20,9 +20,7 @@
     { kind: "separator", value: "commaSpace" },
     { kind: "field", value: "year" },
     { kind: "separator", value: "commaSpace" },
-    { kind: "field", value: "reportTitle" },
-    { kind: "separator", value: "space" },
-    { kind: "field", value: "sequenceNumber" }
+    { kind: "field", value: "reportTitle" }
   ];
 
   const DEFAULT_SETTINGS = {
@@ -208,13 +206,26 @@
   function renderFilename(context, settings, downloadItem) {
     const base = renderTemplate(context, settings) || fallbackBase(context);
     const derivedContext = withDerivedContext(context);
+
+    const activeSettings = settings && Array.isArray(settings.template)
+      ? settings
+      : DEFAULT_SETTINGS;
+    const templateHasSequence = activeSettings.template.some(
+      (token) => token && token.kind === "field" && token.value === "sequenceNumber"
+    );
+
+    let finalBase = base;
+    if (derivedContext.sequenceNumber && !templateHasSequence) {
+      finalBase = `${base} ${derivedContext.sequenceNumber}`;
+    }
+
     const extension =
       extensionFromFilename(derivedContext.originalFilename) ||
       extensionFromFilename(downloadItem && downloadItem.filename) ||
       extensionFromFilename(downloadItem && downloadItem.url) ||
       ".pdf";
 
-    return `${base}${extension}`;
+    return `${finalBase}${extension}`;
   }
 
   function mergeSettings(stored) {
