@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>국가유산 보고서 파일명 설정</title>
+  <link rel="stylesheet" href="options.css">
+  <script src="../src/filename.js" defer></script>
+  <script src="options.js" defer></script>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="topbar">
+      <div>
+        <h1>파일명 배열</h1>
+        <p class="subtitle">참고문헌에 옮기기 좋은 쉼표 형식을 기본으로 두고, 필요하면 직접 배열을 바꿀 수 있습니다.</p>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="enabled-toggle">
+        <span>자동 변경</span>
+      </label>
+    </header>
+
+    <section class="panel preset-panel">
+      <div class="panel-head">
+        <h2>빠른 선택</h2>
+        <span class="hint">프리셋을 고른 뒤 아래 배열을 조금만 고치면 됩니다.</span>
+      </div>
+      <div id="preset-list" class="preset-list"></div>
+    </section>
+
+    <section class="workspace">
+      <div class="panel recipe-panel">
+        <div class="panel-head">
+          <h2>현재 배열</h2>
+          <button type="button" id="reset-button" class="secondary-button">기본값</button>
+        </div>
+        <div id="recipe-list" class="recipe-list" aria-label="현재 파일명 배열"></div>
+        <div class="preview-area">
+          <h2>미리보기</h2>
+          <output id="preview-main" class="preview-name"></output>
+          <output id="preview-attachment" class="preview-name muted"></output>
+        </div>
+      </div>
+
+      <div class="panel palette-panel">
+        <h2>항목</h2>
+        <div id="field-palette" class="palette-grid"></div>
+
+        <h2>구분</h2>
+        <div id="separator-palette" class="palette-grid"></div>
+
+        <h2>직접 입력</h2>
+        <div class="custom-row">
+          <input id="custom-text" type="text" maxlength="24" placeholder="예: 학술총서">
+          <button type="button" id="add-custom-button">추가</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="statusbar">
+      <span id="save-status" role="status">저장됨</span>
+    </footer>
+  </main>
+</body>
+</html>

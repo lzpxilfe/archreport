@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "국가유산 보고서 파일명 정리",
+  "description": "국가유산 보고서 PDF를 페이지 정보에 맞춘 읽기 좋은 파일명으로 저장합니다.",
+  "version": "0.1.0",
+  "permissions": [
+    "downloads",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.heritage.go.kr/*",
+    "https://www.cha.go.kr/*",
+    "https://www.khs.go.kr/*",
+    "https://www.e-minwon.go.kr/*",
+    "https://portal.nrich.go.kr/*",
+    "http://116.67.83.213/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "icons": {
+    "16": "icons/book-16.png",
+    "32": "icons/book-32.png",
+    "48": "icons/book-48.png",
+    "128": "icons/book-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.heritage.go.kr/*",
+        "https://www.cha.go.kr/*",
+        "https://www.khs.go.kr/*",
+        "https://www.e-minwon.go.kr/*",
+        "https://portal.nrich.go.kr/*"
+      ],
+      "js": [
+        "src/filename.js",
+        "src/page-extractors.js",
+        "src/content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/options.html",
+  "action": {
+    "default_title": "국가유산 보고서 파일명 설정",
+    "default_icon": {
+      "16": "icons/book-16.png",
+      "32": "icons/book-32.png",
+      "48": "icons/book-48.png",
+      "128": "icons/book-128.png"
+    }
+  }
+}

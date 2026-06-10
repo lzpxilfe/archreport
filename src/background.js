@@ -1,0 +1,144 @@
+importScripts("filename.js");
+
+const MESSAGE_TYPE = "arch-report-download-context";
+const STORAGE_KEY = "archReportSettings";
+const CONTEXT_TTL_MS = 30 * 60 * 1000;
+const MAX_CONTEXTS = 30;
+
+let settingsCache = ArchReportFilename.mergeSettings();
+let pendingContexts = [];
+
+function loadSettings() {
+  chrome.storage.sync.get(STORAGE_KEY, (result) => {
+    settingsCache = ArchReportFilename.mergeSettings(result && result[STORAGE_KEY]);
+  });
+}
+
+function cleanupContexts(now) {
+  pendingContexts = pendingContexts
+    .filter((entry) => now - entry.context.capturedAt < CONTEXT_TTL_MS)
+    .slice(-MAX_CONTEXTS);
+}
+
+function normalizeUrl(value) {
+  if (!value) {
+    return "";
+  }
+  try {
+    return decodeURIComponent(String(value));
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function basename(value) {
+  return ArchReportFilename.filenameFromUrl(value || "");
+}
+
+function urlScore(context, item) {
+  const contextUrl = normalizeUrl(context.downloadUrl);
+  const itemUrl = normalizeUrl((item && (item.finalUrl || item.url)) || "");
+  const itemFilename = normalizeUrl((item && item.filename) || "");
+  const originalFilename = normalizeUrl(context.originalFilename || context.fileTitle || "");
+
+  let score = 0;
+  if (contextUrl && itemUrl && (itemUrl === contextUrl || itemUrl.includes(contextUrl) || contextUrl.includes(itemUrl))) {
+    score += 8;
+  }
+  if (contextUrl && itemUrl && basename(contextUrl) && itemUrl.includes(basename(contextUrl))) {
+    score += 4;
+  }
+  if (originalFilename && itemFilename && itemFilename.includes(originalFilename)) {
+    score += 4;
+  }
+  if (context.fileIdx && itemUrl.includes(context.fileIdx)) {
+    score += 3;
+  }
+  return score;
+}
+
+function contextScore(entry, item, now) {
+  let score = urlScore(entry.context, item);
+  if (item && item.tabId >= 0 && entry.tabId === item.tabId) {
+    score += 8;
+  }
+
+  const age = now - entry.context.capturedAt;
+  if (age >= 0 && age < 5000) {
+    score += 3;
+  } else if (age < CONTEXT_TTL_MS) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function chooseContext(item) {
+  const now = Date.now();
+  cleanupContexts(now);
+
+  let best = null;
+  for (const entry of pendingContexts) {
+    const score = contextScore(entry, item, now);
+    if (!best || score > best.score || (score === best.score && entry.context.capturedAt > best.entry.context.capturedAt)) {
+      best = { entry, score };
+    }
+  }
+
+  if (!best || best.score < 4) {
+    return null;
+  }
+
+  pendingContexts = pendingContexts.filter((entry) => entry !== best.entry);
+  return best.entry.context;
+}
+
+chrome.runtime.onInstalled.addListener(loadSettings);
+chrome.runtime.onStartup.addListener(loadSettings);
+loadSettings();
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "sync" || !changes[STORAGE_KEY]) {
+    return;
+  }
+  settingsCache = ArchReportFilename.mergeSettings(changes[STORAGE_KEY].newValue);
+});
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message || message.type !== MESSAGE_TYPE || !message.context) {
+    return;
+  }
+
+  const context = ArchReportFilename.withDerivedContext(message.context);
+  context.capturedAt = context.capturedAt || Date.now();
+
+  pendingContexts.push({
+    context,
+    tabId: sender && sender.tab ? sender.tab.id : -1,
+    frameId: sender ? sender.frameId : 0
+  });
+  cleanupContexts(Date.now());
+});
+
+chrome.action.onClicked.addListener(() => {
+  chrome.runtime.openOptionsPage();
+});
+
+chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+  if (!settingsCache.enabled) {
+    suggest();
+    return;
+  }
+
+  const context = chooseContext(downloadItem);
+  if (!context) {
+    suggest();
+    return;
+  }
+
+  const filename = ArchReportFilename.renderFilename(context, settingsCache, downloadItem);
+  suggest({
+    filename,
+    conflictAction: "uniquify"
+  });
+});
