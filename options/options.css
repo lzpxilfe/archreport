@@ -332,3 +332,165 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+/* Citation Panel Styles */
+.citation-panel {
+  margin-bottom: 18px;
+  border-color: var(--accent);
+  background: #fbfdfc;
+}
+
+.citation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.citation-row input {
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: #fdfdfd;
+}
+
+.citation-row input:read-only {
+  background: #fcfcfc;
+}
+
+.primary-button {
+  min-height: 38px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.primary-button:hover {
+  background: #24584b;
+}
+
+.primary-button:disabled {
+  background: var(--line);
+  border-color: var(--line);
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Tab navigation styles */
+.tab-nav {
+  display: none;
+}
+
+/* Popup specific styling (mode=popup) */
+body.is-popup {
+  width: 480px;
+  min-width: 480px;
+  background: var(--bg);
+}
+
+body.is-popup .page-shell {
+  width: 100%;
+  padding: 16px;
+  margin: 0;
+}
+
+body.is-popup .topbar {
+  margin-bottom: 12px;
+}
+
+body.is-popup .topbar h1 {
+  font-size: 18px;
+}
+
+body.is-popup .topbar .subtitle {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+body.is-popup .tab-nav {
+  display: flex;
+  gap: 8px;
+  border-bottom: 2px solid var(--line);
+  margin-bottom: 16px;
+}
+
+body.is-popup .tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: color 150ms ease, border-color 150ms ease;
+  text-align: center;
+}
+
+body.is-popup .tab-btn:hover {
+  color: var(--text);
+}
+
+body.is-popup .tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Tab contents toggling */
+body.is-popup.tab-citation-active .workspace,
+body.is-popup.tab-citation-active .statusbar {
+  display: none !important;
+}
+
+body.is-popup.tab-rename-active .citation-panel,
+body.is-popup.tab-rename-active .preset-panel {
+  display: none !important;
+}
+
+body.is-popup .workspace {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+body.is-popup .preset-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+body.is-popup .preset-button {
+  min-height: 56px;
+  padding: 6px 10px;
+}
+
+body.is-popup .preset-button strong {
+  font-size: 13px;
+}
+
+body.is-popup .preset-button span {
+  font-size: 11px;
+}
+
+body.is-popup .panel {
+  padding: 12px;
+}
+
+body.is-popup .panel-head {
+  margin-bottom: 8px;
+}
+
+body.is-popup .recipe-list {
+  min-height: 80px;
+  padding: 8px;
+}
+

@@ -45,6 +45,7 @@
   "options_page": "options/options.html",
   "action": {
     "default_title": "국가유산 보고서 파일명 설정",
+    "default_popup": "options/options.html?mode=popup",
     "default_icon": {
       "16": "icons/book-16.png",
       "32": "icons/book-32.png",

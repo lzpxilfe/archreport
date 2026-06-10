@@ -406,6 +406,84 @@
     els.status = document.getElementById("save-status");
   }
 
+  function setupCitation() {
+    const citationInput = document.getElementById("citation-input");
+    const copyBtn = document.getElementById("copy-citation-btn");
+    
+    if (!citationInput || !copyBtn) return;
+    
+    if (typeof chrome === "undefined" || !chrome.tabs) {
+      citationInput.value = "『경주 월성 시·발굴 조사 보고서』";
+      copyBtn.disabled = false;
+      copyBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(citationInput.value).then(() => {
+          const originalText = copyBtn.textContent;
+          copyBtn.textContent = "복사됨!";
+          copyBtn.style.background = "#15803d";
+          copyBtn.style.borderColor = "#15803d";
+          setTimeout(() => {
+            copyBtn.textContent = originalText;
+            copyBtn.style.background = "";
+            copyBtn.style.borderColor = "";
+          }, 1500);
+        });
+      });
+      return;
+    }
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs[0];
+      if (!activeTab || !activeTab.id) {
+        citationInput.value = "";
+        citationInput.placeholder = "활성 탭이 없습니다.";
+        copyBtn.disabled = true;
+        return;
+      }
+
+      const url = activeTab.url || "";
+      const isSupported = /heritage\.go\.kr|cha\.go\.kr|khs\.go\.kr|e-minwon\.go\.kr|nrich\.go\.kr/.test(url);
+      
+      if (!isSupported) {
+        citationInput.value = "";
+        citationInput.placeholder = "보고서 상세 페이지가 아닙니다.";
+        copyBtn.disabled = true;
+        return;
+      }
+
+      // Ask content script for report title
+      chrome.tabs.sendMessage(activeTab.id, { type: "get-report-title" }, (response) => {
+        if (chrome.runtime.lastError || !response || !response.reportTitle) {
+          citationInput.value = "";
+          citationInput.placeholder = "보고서 상세 페이지가 아닙니다.";
+          copyBtn.disabled = true;
+          return;
+        }
+
+        const title = response.reportTitle.trim();
+        const formattedTitle = `『${title}』`;
+        citationInput.value = formattedTitle;
+        copyBtn.disabled = false;
+
+        // Copy button action
+        copyBtn.addEventListener("click", () => {
+          navigator.clipboard.writeText(formattedTitle).then(() => {
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = "복사됨!";
+            copyBtn.style.background = "#15803d";
+            copyBtn.style.borderColor = "#15803d";
+            setTimeout(() => {
+              copyBtn.textContent = originalText;
+              copyBtn.style.background = "";
+              copyBtn.style.borderColor = "";
+            }, 1500);
+          }).catch(err => {
+            console.error("Failed to copy text: ", err);
+          });
+        });
+      });
+    });
+  }
+
   function load() {
     if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.sync) {
       renderPresets();
@@ -423,10 +501,37 @@
     });
   }
 
+  function setupTabs() {
+    document.body.classList.add("tab-citation-active");
+
+    const tabButtons = document.querySelectorAll(".tab-nav .tab-btn");
+    tabButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        tabButtons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        const targetTab = btn.getAttribute("data-tab");
+        if (targetTab === "citation") {
+          document.body.classList.add("tab-citation-active");
+          document.body.classList.remove("tab-rename-active");
+        } else if (targetTab === "rename") {
+          document.body.classList.add("tab-rename-active");
+          document.body.classList.remove("tab-citation-active");
+        }
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
+    const isPopup = new URLSearchParams(window.location.search).get("mode") === "popup";
+    if (isPopup) {
+      document.body.classList.add("is-popup");
+      setupTabs();
+    }
     cacheElements();
     setupRecipeDrop();
     bindControls();
     load();
+    setupCitation();
   });
 })();

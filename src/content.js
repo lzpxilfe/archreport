@@ -122,4 +122,12 @@
     window.setTimeout(sendCurrentPageContext, 1000);
     window.setTimeout(sendCurrentPageContext, 3000);
   }
+
+  // Listen for citation requests from the extension popup
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message && message.type === "get-report-title") {
+      const reportTitle = extractors.extractReportTitleFromDocument(document);
+      sendResponse({ reportTitle: reportTitle || "" });
+    }
+  });
 })();
