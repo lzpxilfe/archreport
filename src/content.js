@@ -762,6 +762,9 @@
 
   function handleDownloadIntercept(event) {
     if (sourceName() === "e-minwon") {
+      if (event.type === "pointerdown" || event.type === "mousedown") {
+        return;
+      }
       handleEminwonDownloadIntercept(event);
       return;
     }
