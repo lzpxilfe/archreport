@@ -35,6 +35,10 @@ function debugWarn(message, detail) {
   console.warn(`${DOWNLOAD_DEBUG_PREFIX} ${message}`, detail || "");
 }
 
+function consumeLastError() {
+  return typeof chrome !== "undefined" && chrome.runtime ? chrome.runtime.lastError : null;
+}
+
 function loadSettings() {
   if (!hasChromeApi(["storage", "sync", "get"])) {
     return;
@@ -204,16 +208,20 @@ function zipState(downloadId) {
 
 function sendQueueMessage(tabId, frameId, payload, callback) {
   const handleResponse = (response) => {
-    const error = chrome.runtime.lastError;
+    const error = consumeLastError();
     callback(error, response, frameId);
   };
 
-  if (Number.isInteger(frameId)) {
-    chrome.tabs.sendMessage(tabId, payload, { frameId }, handleResponse);
-    return;
+  try {
+    chrome.tabs.sendMessage(
+      tabId,
+      payload,
+      Number.isInteger(frameId) ? { frameId } : {},
+      handleResponse
+    );
+  } catch (error) {
+    callback(error, null, frameId);
   }
-
-  chrome.tabs.sendMessage(tabId, payload, handleResponse);
 }
 
 function requestEminwonQueue(downloadItem) {
@@ -272,12 +280,12 @@ function removeZipArtifact(downloadId) {
 
   if (chrome.downloads.removeFile) {
     chrome.downloads.removeFile(downloadId, () => {
-      void chrome.runtime.lastError;
+      consumeLastError();
     });
   }
   if (chrome.downloads.erase) {
     chrome.downloads.erase({ id: downloadId }, () => {
-      void chrome.runtime.lastError;
+      consumeLastError();
     });
   }
 }
@@ -307,7 +315,7 @@ function cancelEminwonZip(downloadItem) {
   state.cancelRequested = true;
   if (hasChromeApi(["downloads", "cancel"])) {
     chrome.downloads.cancel(downloadItem.id, () => {
-      void chrome.runtime.lastError;
+      consumeLastError();
       scheduleZipRemoval(downloadItem.id);
     });
   } else {
@@ -551,6 +559,7 @@ if (typeof module !== "undefined" && module.exports) {
     isZipDownload,
     maybeCancelEminwonZip,
     rememberTabSource,
+    sendQueueMessage,
     zipState
   };
 }

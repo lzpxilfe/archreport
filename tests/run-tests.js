@@ -304,3 +304,34 @@ test("background cleanup prunes stale ZIP states", () => {
 
   assert.equal(Boolean(background._state.zipDownloadStates["9"]), false);
 });
+
+test("background sends e-minwon queue messages with an options object", () => {
+  const calls = [];
+  global.chrome = {
+    runtime: {
+      lastError: null
+    },
+    tabs: {
+      sendMessage(...args) {
+        calls.push(args);
+        args[3]({ started: true });
+      }
+    }
+  };
+
+  background.sendQueueMessage(3, null, { type: "x" }, (error, response) => {
+    assert.equal(error, null);
+    assert.deepEqual(response, { started: true });
+  });
+
+  background.sendQueueMessage(3, 7, { type: "x" }, (error, response, frameId) => {
+    assert.equal(error, null);
+    assert.deepEqual(response, { started: true });
+    assert.equal(frameId, 7);
+  });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].slice(0, 3), [3, { type: "x" }, {}]);
+  assert.deepEqual(calls[1].slice(0, 3), [3, { type: "x" }, { frameId: 7 }]);
+  delete global.chrome;
+});
