@@ -416,6 +416,7 @@ function contextScore(entry, item, now) {
 function chooseContextEntry(item) {
   const now = Date.now();
   cleanupContexts(now);
+  const itemTabId = item && Number.isInteger(item.tabId) ? item.tabId : -1;
 
   const queueEntry = pendingContexts
     .filter((entry) =>
@@ -424,8 +425,8 @@ function chooseContextEntry(item) {
       entry.context.queueBatchId &&
       item &&
       (
-        (item.tabId >= 0 && entry.tabId === item.tabId) ||
-        (item.tabId < 0 && hasEminwonUrl(item))
+        (itemTabId >= 0 && entry.tabId === itemTabId) ||
+        (itemTabId < 0 && hasEminwonUrl(item))
       )
     )
     .sort((left, right) => {

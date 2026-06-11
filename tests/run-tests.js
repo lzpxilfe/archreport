@@ -486,3 +486,27 @@ test("background consumes e-minwon queue context for tabless e-minwon downloads"
 
   assert.equal(context.sequenceNumber, "1");
 });
+
+test("background consumes e-minwon queue context when download item omits tabId", () => {
+  background._state.reset();
+  background._state.pendingContexts.push({
+    tabId: 5,
+    frameId: 0,
+    context: {
+      source: "e-minwon",
+      reportTitle: "test",
+      queueBatchId: "batch-3",
+      queueOrder: "1",
+      sequenceNumber: "1",
+      pageUrl: "https://www.e-minwon.go.kr/example",
+      capturedAt: Date.now()
+    }
+  });
+
+  const context = background.chooseContext({
+    url: "https://www.e-minwon.go.kr/kuploadProxy.do?k00=x",
+    filename: "download.pdf"
+  });
+
+  assert.equal(context.sequenceNumber, "1");
+});
