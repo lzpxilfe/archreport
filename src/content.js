@@ -8,6 +8,7 @@
   const EMINWON_CONTEXT_REQUEST_TYPE = "arch-report-eminwon-context-request";
   const EMINWON_QUEUE_BRIDGE_TYPE = "arch-report-eminwon-download-queue-bridge";
   const EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE = "arch-report-eminwon-queue-download-started";
+  const STORAGE_KEY = "archReportSettings";
   const EMINWON_QUEUE_ACK_TIMEOUT_MS = 10000;
   const EMINWON_QUEUE_AFTER_ACK_DELAY_MS = 350;
   const EMINWON_QUEUE_CLICK_DELAY_MS = 120;
@@ -22,6 +23,7 @@
   let eminwonQueueClickInProgress = false;
   let eminwonQueueWaiter = null;
   let bridgedEminwonContexts = [];
+  let extensionEnabled = true;
 
   if (!extractors || !filename) {
     return;
@@ -40,6 +42,46 @@
       }
     }
     console.warn(`${DEBUG_PREFIX} ${message}${suffix}`);
+  }
+
+  function hasChromeApi(path) {
+    let current = typeof chrome !== "undefined" ? chrome : null;
+    for (const key of path) {
+      current = current && current[key];
+    }
+    return Boolean(current);
+  }
+
+  function applyStoredSettings(stored) {
+    extensionEnabled = filename.mergeSettings(stored).enabled !== false;
+  }
+
+  function loadExtensionSettings(callback) {
+    const done = typeof callback === "function" ? callback : () => {};
+    if (!hasChromeApi(["storage", "sync", "get"])) {
+      done();
+      return;
+    }
+    chrome.storage.sync.get(STORAGE_KEY, (result) => {
+      applyStoredSettings(result && result[STORAGE_KEY]);
+      done();
+    });
+  }
+
+  function observeExtensionSettings() {
+    if (!hasChromeApi(["storage", "onChanged", "addListener"])) {
+      return;
+    }
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "sync" || !changes[STORAGE_KEY]) {
+        return;
+      }
+      const wasEnabled = extensionEnabled;
+      applyStoredSettings(changes[STORAGE_KEY].newValue);
+      if (!wasEnabled && extensionEnabled) {
+        window.setTimeout(runPageInitialization, 0);
+      }
+    });
   }
 
   function sourceName() {
@@ -216,7 +258,7 @@
   }
 
   function sendContext(context) {
-    if (!context || !chrome.runtime || !chrome.runtime.sendMessage) {
+    if (!extensionEnabled || !context || !chrome.runtime || !chrome.runtime.sendMessage) {
       return;
     }
     chrome.runtime.sendMessage({
@@ -228,7 +270,7 @@
   }
 
   function reportPageReady() {
-    if (!chrome.runtime || !chrome.runtime.sendMessage) {
+    if (!extensionEnabled || !chrome.runtime || !chrome.runtime.sendMessage) {
       return;
     }
     chrome.runtime.sendMessage({
@@ -258,7 +300,7 @@
   }
 
   function broadcastEminwonContextsToChildFrames() {
-    if (sourceName() !== "e-minwon") {
+    if (!extensionEnabled || sourceName() !== "e-minwon") {
       return 0;
     }
     const contexts = buildEminwonContexts();
@@ -277,7 +319,7 @@
   }
 
   function requestEminwonContextsFromParent() {
-    if (sourceName() === "e-minwon" || !window.parent || window.parent === window) {
+    if (!extensionEnabled || sourceName() === "e-minwon" || !window.parent || window.parent === window) {
       return;
     }
     window.parent.postMessage({
@@ -557,7 +599,7 @@
   }
 
   function sendSingleEminwonContextForNativeDownload(control) {
-    if (eminwonDownloadQueueRunning) {
+    if (!extensionEnabled || eminwonDownloadQueueRunning) {
       return;
     }
 
@@ -729,6 +771,10 @@
   }
 
   function handleEminwonDownloadIntercept(event) {
+    if (!extensionEnabled) {
+      return false;
+    }
+
     const control = event.target && event.target.closest
       ? event.target.closest(EMINWON_CONTROL_SELECTOR)
       : null;
@@ -767,6 +813,13 @@
   }
 
   function startEminwonQueueFromCurrentPage() {
+    if (!extensionEnabled) {
+      return {
+        started: false,
+        reason: "extension-disabled"
+      };
+    }
+
     if (eminwonDownloadQueueRunning) {
       return {
         started: false,
@@ -801,6 +854,16 @@
 
   function broadcastEminwonQueueToChildFrames(downloadId, callback) {
     const done = typeof callback === "function" ? callback : null;
+    if (!extensionEnabled) {
+      if (done) {
+        done({
+          started: false,
+          reason: "extension-disabled"
+        });
+      }
+      return 0;
+    }
+
     const frames = childFrames();
     if (frames.length === 0) {
       return 0;
@@ -899,6 +962,10 @@
   }
 
   function captureDownloadIntent(event) {
+    if (!extensionEnabled) {
+      return;
+    }
+
     const control = event.target && event.target.closest
       ? event.target.closest("a, button, input, [onclick], [data-url], [data-filename]")
       : null;
@@ -917,6 +984,10 @@
   }
 
   function handleZipDownloadIntercept(event) {
+    if (!extensionEnabled) {
+      return;
+    }
+
     const control = event.target && event.target.closest
       ? event.target.closest(EMINWON_CONTROL_SELECTOR)
       : null;
@@ -1013,6 +1084,10 @@
   }
 
   function handleDownloadIntercept(event) {
+    if (!extensionEnabled) {
+      return;
+    }
+
     if (isEminwonContextFrame()) {
       if (event.type === "pointerdown" || event.type === "mousedown") {
         return;
@@ -1024,7 +1099,7 @@
   }
 
   function installEminwonChildFrameInterceptors() {
-    if (sourceName() !== "e-minwon") {
+    if (!extensionEnabled || sourceName() !== "e-minwon") {
       return 0;
     }
 
@@ -1077,6 +1152,15 @@
     if (!data) {
       return;
     }
+    if (!extensionEnabled) {
+      if (data.type === EMINWON_QUEUE_BRIDGE_TYPE && data.expectsResponse && event.ports && event.ports[0]) {
+        event.ports[0].postMessage({
+          started: false,
+          reason: "extension-disabled"
+        });
+      }
+      return;
+    }
 
     if (data.type === EMINWON_CONTEXT_BRIDGE_TYPE) {
       storeBridgedEminwonContexts(data.contexts);
@@ -1127,6 +1211,10 @@
   });
 
   function sendAllPageContexts() {
+    if (!extensionEnabled) {
+      return;
+    }
+
     if (isEminwonContextFrame()) {
       const contexts = buildEminwonContexts();
       if (contexts.length === 1) {
@@ -1162,6 +1250,13 @@
     }
 
     if (message && message.type === START_EMINWON_QUEUE_TYPE) {
+      if (!extensionEnabled) {
+        sendResponse({
+          started: false,
+          reason: "extension-disabled"
+        });
+        return;
+      }
       if (!isEminwonContextFrame()) {
         sendResponse({
           started: false,
@@ -1188,7 +1283,7 @@
   });
 
   function extractAndReportMetadata() {
-    if (!chrome.runtime || !chrome.runtime.sendMessage) {
+    if (!extensionEnabled || !chrome.runtime || !chrome.runtime.sendMessage) {
       return;
     }
 
@@ -1206,9 +1301,14 @@
     }
 
     const tableFacts = extractors.extractTableFactsFromDocument(document);
+    const hasDownloadControl = Array.from(document.querySelectorAll("a, button, input"))
+      .some((el) => extractors.isDownloadControl(el));
     const visibleText = pageText();
     const reportTitle = tableFacts.reportTitle || extractors.extractReportTitleFromDocument(document);
     const isTableExtract = Boolean(tableFacts.reportTitle);
+    if (!isTableExtract && !hasDownloadControl) {
+      return;
+    }
     if (reportTitle && reportTitle.length >= 4) {
       const year = tableFacts.year || extractors.extractYearFromText(visibleText);
       const agency = tableFacts.agency || extractors.extractAgencyFromText(visibleText);
@@ -1234,6 +1334,10 @@
   }
 
   function runPageInitialization() {
+    if (!extensionEnabled) {
+      return;
+    }
+
     requestEminwonContextsFromParent();
     reportPageReady();
     extractAndReportMetadata();
@@ -1242,12 +1346,15 @@
     installEminwonChildFrameInterceptors();
   }
 
-  if (document.readyState === "complete" || document.readyState === "interactive") {
-    runPageInitialization();
-  } else {
-    document.addEventListener("DOMContentLoaded", runPageInitialization);
-  }
-  window.setTimeout(runPageInitialization, 1000);
-  window.setTimeout(runPageInitialization, 3000);
-  window.setTimeout(runPageInitialization, 6000);
+  observeExtensionSettings();
+  loadExtensionSettings(() => {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      runPageInitialization();
+    } else {
+      document.addEventListener("DOMContentLoaded", runPageInitialization);
+    }
+    window.setTimeout(runPageInitialization, 1000);
+    window.setTimeout(runPageInitialization, 3000);
+    window.setTimeout(runPageInitialization, 6000);
+  });
 })();

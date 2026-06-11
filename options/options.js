@@ -404,29 +404,42 @@
   function setupCitation() {
     const citationInput = document.getElementById("citation-input");
     const copyBtn = document.getElementById("copy-citation-btn");
-    const unusableTitlePattern = /직접입력|자동\s*연계\s*공개|궁금하신\s*사항|국가유산\s*협업포털|조사시도\s*시도|서울\s+부산\s+대구/;
+    const unusableMetadataPattern = /직접입력|자동\s*연계\s*공개|궁금하신\s*사항|문의하시기\s*바랍니다|국가유산\s*협업포털|각\s*발간기관|조사시도\s*시도|서울\s+부산\s+대구/;
+    const unusableCompactTitles = new Set(["발굴조사보고서", "행정정보"]);
     
     if (!citationInput || !copyBtn) return;
+
+    const cleanMetadataValue = (value) => {
+      const normalized = filename.normalizeSpaces(value);
+      return unusableMetadataPattern.test(normalized) ? "" : normalized;
+    };
     
     const formatCitation = (meta) => {
       const parts = [];
-      if (meta.agency && meta.agency.trim()) {
-        parts.push(meta.agency.trim());
+      const agency = cleanMetadataValue(meta && meta.agency);
+      const year = cleanMetadataValue(meta && meta.year);
+      const reportTitle = cleanMetadataValue(meta && meta.reportTitle);
+
+      if (agency) {
+        parts.push(agency);
       }
-      if (meta.year && meta.year.trim()) {
-        parts.push(meta.year.trim());
+      if (year) {
+        parts.push(year);
       }
-      if (meta.reportTitle && meta.reportTitle.trim()) {
-        parts.push(`『${meta.reportTitle.trim()}』`);
+      if (reportTitle) {
+        parts.push(`『${reportTitle}』`);
       }
       return parts.join(", ");
     };
 
     const isUsableReportMetadata = (meta) => {
       const title = filename.normalizeSpaces(meta && meta.reportTitle);
+      const compactTitle = title.replace(/\s+/g, "");
       return Boolean(title) &&
         title.length <= 120 &&
-        !unusableTitlePattern.test(title);
+        !unusableCompactTitles.has(compactTitle) &&
+        !unusableMetadataPattern.test(title) &&
+        !unusableMetadataPattern.test(filename.normalizeSpaces(meta && meta.agency));
     };
 
     const showCopiedState = () => {
@@ -489,16 +502,16 @@
 
           // Update current preview context with actual metadata
           currentContext = {
-            reportTitle: metadata.reportTitle,
-            fileTitle: metadata.reportTitle + ".pdf",
-            originalFilename: metadata.reportTitle + ".pdf",
-            year: metadata.year || "",
-            agency: metadata.agency || "",
-            permitNumber: metadata.permitNumber || "",
-            siteName: metadata.siteName || "",
-            submittedDate: metadata.submittedDate || "",
-            province: metadata.province || "",
-            district: metadata.district || ""
+            reportTitle: cleanMetadataValue(metadata.reportTitle),
+            fileTitle: cleanMetadataValue(metadata.reportTitle) + ".pdf",
+            originalFilename: cleanMetadataValue(metadata.reportTitle) + ".pdf",
+            year: cleanMetadataValue(metadata.year),
+            agency: cleanMetadataValue(metadata.agency),
+            permitNumber: cleanMetadataValue(metadata.permitNumber),
+            siteName: cleanMetadataValue(metadata.siteName),
+            submittedDate: cleanMetadataValue(metadata.submittedDate),
+            province: cleanMetadataValue(metadata.province),
+            district: cleanMetadataValue(metadata.district)
           };
           updatePreview();
 

@@ -42,6 +42,9 @@
   const REPORT_TITLE_REJECT_EXACT = new Set([
     "\uAD6D\uAC00\uC720\uC0B0 \uAC04\uD589\uBB3C",
     "\uBCF4\uACE0\uC11C",
+    "\uBC1C\uAD74\uC870\uC0AC \uBCF4\uACE0\uC11C",
+    "\uBC1C\uAD74\uC870\uC0AC\uBCF4\uACE0\uC11C",
+    "\uD589\uC815\uC815\uBCF4",
     "\uBC1C\uAC04\uC790\uB8CC",
     "\uBCF8\uBB38",
     "\uC5F0\uAD6C\uC131\uACFC",
@@ -52,6 +55,15 @@
     /\uC870\uC0AC\s*\uC2DC\uB3C4.*\uC81C\uCD9C\s*\uB144\uB3C4/,
     /\uC11C\uC6B8\s+\uBD80\uC0B0\s+\uB300\uAD6C/,
     /2026\s+2025\s+2024\s+2023/
+  ];
+
+  const AGENCY_REJECT_PATTERNS = [
+    /\uAD6D\uAC00\uC720\uC0B0\s*\uD611\uC5C5\uD3EC\uD138/,
+    /\uC9C1\uC811\s*\uC785\uB825/,
+    /\uC790\uB3D9\s*\uC5F0\uACC4\s*\uACF5\uAC1C/,
+    /\uAD81\uAE08\uD558\uC2E0\s*\uC0AC\uD56D/,
+    /\uBB38\uC758\uD558\uC2DC\uAE30\s*\uBC14\uB78D\uB2C8\uB2E4/,
+    /\uAC01\s*\uBC1C\uAC04\uAE30\uAD00/
   ];
 
   const EMINWON_DOWNLOAD_PATTERNS = {
@@ -154,8 +166,17 @@
     const labeled = source.match(/(?:발행기관|저작권자|생산자|발간기관|조사기관)\s*[:：]?\s*([^|•\n\r]+?)(?=\s+(?:발행년도|발행연도|형태사항|저작권자|초록|목차|보고서|첨부파일|등록일|조회수)\b|$)/);
     if (labeled) {
       const candidate = normalizeSpaces(labeled[1]);
+      if (!candidate ||
+          candidate.length > 80 ||
+          AGENCY_REJECT_PATTERNS.some((pattern) => pattern.test(candidate))) {
+        return "";
+      }
       const agencyName = candidate.match(/^(.+?(?:연구소|연구원|센터|재단|기관|협회|대학교|박물관|국가유산진흥원|국가유산청))/);
-      return normalizeSpaces((agencyName && agencyName[1]) || candidate);
+      const agency = normalizeSpaces((agencyName && agencyName[1]) || candidate);
+      if (AGENCY_REJECT_PATTERNS.some((pattern) => pattern.test(agency))) {
+        return "";
+      }
+      return agency;
     }
     return "";
   }

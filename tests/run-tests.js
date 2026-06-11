@@ -273,6 +273,30 @@ test("report title fallback rejects e-minwon search filter text", () => {
   assert.equal(title, "");
 });
 
+test("report title fallback rejects generic CHA report list heading", () => {
+  const title = extractors.extractReportTitleFromDocument(fakeDocumentForEminwon([], {
+    omitReportTitle: true,
+    headingText: "발굴조사 보고서"
+  }));
+
+  assert.equal(title, "");
+});
+
+test("report title fallback rejects CHA layout section heading", () => {
+  const title = extractors.extractReportTitleFromDocument(fakeDocumentForEminwon([], {
+    omitReportTitle: true,
+    headingText: "행정정보"
+  }));
+
+  assert.equal(title, "");
+});
+
+test("agency extractor rejects CHA shell explanatory text", () => {
+  const text = "발굴조사 보고서는 각 발간기관에서 국가유산 협업포털(e-minwon.go.kr)에 직접입력 후, 자동 연계 공개되는 시스템입니다. 궁금하신 사항이 있을 경우, 각 발간기관으로 문의하시기 바랍니다.";
+
+  assert.equal(extractors.extractAgencyFromText(text), "");
+});
+
 test("e-minwon bulk target planner intercepts only multi-file downloads", () => {
   assert.equal(extractors.classifyEminwonDownloadControl(fakeControl({ value: "전체 다운로드" })), "all");
   assert.equal(extractors.classifyEminwonDownloadControl(fakeControl({ value: "다운로드" })), "download");
@@ -421,6 +445,43 @@ test("background cancels e-minwon ZIP only after queue starts", () => {
     assert.equal(cancelCount, 1);
   } finally {
     console.warn = originalWarn;
+    delete global.chrome;
+  }
+});
+
+test("background leaves e-minwon ZIP untouched while extension is disabled", () => {
+  let messageCount = 0;
+  global.chrome = {
+    runtime: {
+      lastError: null
+    },
+    tabs: {
+      sendMessage(_tabId, _payload, _options, callback) {
+        messageCount += 1;
+        callback({ started: true });
+      }
+    },
+    downloads: {
+      cancel(_downloadId, callback) {
+        callback();
+      },
+      removeFile(_downloadId, callback) {
+        callback();
+      },
+      erase(_query, callback) {
+        callback();
+      }
+    }
+  };
+
+  try {
+    background._state.reset();
+    background._state.setSettings({ enabled: false });
+    background.rememberTabSource(3, "e-minwon", "https://www.e-minwon.go.kr/example", 0);
+
+    assert.equal(background.maybeCancelEminwonZip({ id: 31, tabId: 3, filename: "download.zip" }), false);
+    assert.equal(messageCount, 0);
+  } finally {
     delete global.chrome;
   }
 });

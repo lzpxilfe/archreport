@@ -357,6 +357,9 @@ function cancelEminwonZip(downloadItem) {
 }
 
 function maybeCancelEminwonZip(downloadItem) {
+  if (!settingsCache.enabled) {
+    return false;
+  }
   if (!isZipDownload(downloadItem)) {
     return false;
   }
@@ -636,6 +639,9 @@ if (typeof module !== "undefined" && module.exports) {
         tabSources = {};
         zipDownloadStates = {};
         settingsCache = ArchReportFilename.mergeSettings();
+      },
+      setSettings(settings) {
+        settingsCache = ArchReportFilename.mergeSettings(settings);
       }
     },
     cleanupContexts,
