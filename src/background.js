@@ -416,6 +416,31 @@ function chooseContext(item) {
   const now = Date.now();
   cleanupContexts(now);
 
+  const queueEntry = pendingContexts
+    .filter((entry) =>
+      entry.context &&
+      entry.context.source === "e-minwon" &&
+      entry.context.queueBatchId &&
+      item &&
+      (
+        (item.tabId >= 0 && entry.tabId === item.tabId) ||
+        (item.tabId < 0 && hasEminwonUrl(item))
+      )
+    )
+    .sort((left, right) => {
+      const leftOrder = Number(left.context.queueOrder) || 0;
+      const rightOrder = Number(right.context.queueOrder) || 0;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+      return left.context.capturedAt - right.context.capturedAt;
+    })[0];
+
+  if (queueEntry) {
+    pendingContexts = pendingContexts.filter((entry) => entry !== queueEntry);
+    return queueEntry.context;
+  }
+
   let best = null;
   for (const entry of pendingContexts) {
     const score = contextScore(entry, item, now);

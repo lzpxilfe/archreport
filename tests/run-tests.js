@@ -382,3 +382,65 @@ test("background cancels e-minwon ZIP only after queue starts", () => {
     delete global.chrome;
   }
 });
+
+test("background consumes e-minwon queue contexts in queue order", () => {
+  background._state.reset();
+  const now = Date.now();
+  background._state.pendingContexts.push(
+    {
+      tabId: 5,
+      frameId: 0,
+      context: {
+        source: "e-minwon",
+        reportTitle: "테스트",
+        queueBatchId: "batch-1",
+        queueOrder: "2",
+        sequenceNumber: "2",
+        capturedAt: now
+      }
+    },
+    {
+      tabId: 5,
+      frameId: 0,
+      context: {
+        source: "e-minwon",
+        reportTitle: "테스트",
+        queueBatchId: "batch-1",
+        queueOrder: "1",
+        sequenceNumber: "1",
+        capturedAt: now + 100
+      }
+    }
+  );
+
+  const first = background.chooseContext({ tabId: 5, filename: "download.pdf" });
+  const second = background.chooseContext({ tabId: 5, filename: "download.pdf" });
+
+  assert.equal(first.sequenceNumber, "1");
+  assert.equal(second.sequenceNumber, "2");
+});
+
+test("background consumes e-minwon queue context for tabless e-minwon downloads", () => {
+  background._state.reset();
+  background._state.pendingContexts.push({
+    tabId: 5,
+    frameId: 0,
+    context: {
+      source: "e-minwon",
+      reportTitle: "테스트",
+      queueBatchId: "batch-2",
+      queueOrder: "1",
+      sequenceNumber: "1",
+      pageUrl: "https://www.e-minwon.go.kr/example",
+      capturedAt: Date.now()
+    }
+  });
+
+  const context = background.chooseContext({
+    tabId: -1,
+    url: "https://www.e-minwon.go.kr/download/file.pdf",
+    filename: "download.pdf"
+  });
+
+  assert.equal(context.sequenceNumber, "1");
+});

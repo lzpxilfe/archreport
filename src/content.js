@@ -197,12 +197,39 @@
       .filter((index) => index >= 0);
   }
 
+  function dispatchMouseEvent(element, type) {
+    if (!element || typeof element.dispatchEvent !== "function") {
+      return true;
+    }
+    return element.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window
+    }));
+  }
+
+  function activateElement(element) {
+    if (!element) {
+      return;
+    }
+    if (typeof element.focus === "function") {
+      element.focus({ preventScroll: true });
+    }
+    dispatchMouseEvent(element, "mousedown");
+    dispatchMouseEvent(element, "mouseup");
+    if (typeof element.click === "function") {
+      element.click();
+    } else {
+      dispatchMouseEvent(element, "click");
+    }
+  }
+
   function setCheckboxChecked(checkbox, checked) {
     if (!checkbox) {
       return;
     }
     if (checkbox.checked !== checked && typeof checkbox.click === "function" && !checkbox.disabled) {
-      checkbox.click();
+      activateElement(checkbox);
     }
     if (checkbox.checked === checked) {
       return;
@@ -381,6 +408,18 @@
     });
   }
 
+  function contextForQueueDownload(plan, targetIndex, position) {
+    const context = Object.assign({}, plan.contexts[targetIndex]);
+    if (plan.targetIndexes.length > 1) {
+      context.sequenceNumber = String(position + 1);
+    }
+    context.queueBatchId = plan.queueBatchId;
+    context.queueOrder = String(position + 1);
+    context.queueTargetIndex = String(targetIndex);
+    context.capturedAt = Date.now();
+    return context;
+  }
+
   function stopDownloadEvent(event) {
     event.preventDefault();
     if (event.stopImmediatePropagation) {
@@ -393,7 +432,7 @@
   function clickEminwonDownloadButton(button) {
     eminwonQueueClickInProgress = true;
     try {
-      button.click();
+      activateElement(button);
     } finally {
       eminwonQueueClickInProgress = false;
     }
@@ -401,6 +440,7 @@
 
   function runEminwonDownloadQueue(plan, options) {
     const opts = options || {};
+    plan.queueBatchId = plan.queueBatchId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     eminwonDownloadQueueRunning = true;
     const originalStates = plan.checkboxes.map((checkbox) => checkbox.checked);
     let position = 0;
@@ -416,7 +456,7 @@
       plan.checkboxes.forEach((checkbox, index) => {
         setCheckboxChecked(checkbox, index === targetIndex);
       });
-      sendContext(plan.contexts[targetIndex]);
+      sendContext(contextForQueueDownload(plan, targetIndex, position));
 
       if (position === 0 && opts.immediateFirstClick) {
         clickEminwonDownloadButton(plan.downloadButton);
