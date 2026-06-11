@@ -498,6 +498,14 @@ test("manifest and package versions stay aligned", () => {
   assert.equal(packageJson.version, manifest.version);
 });
 
+test("package metadata and LICENSE use GPL-2.0-only", () => {
+  const packageJson = readJsonFromRoot("package.json");
+  const licenseText = fs.readFileSync(path.join(__dirname, "..", "LICENSE"), "utf8");
+
+  assert.equal(packageJson.license, "GPL-2.0-only");
+  assert.match(licenseText, /GNU GENERAL PUBLIC LICENSE\s+Version 2, June 1991/);
+});
+
 test("background updates toolbar badge for enabled state", () => {
   const badgeTexts = [];
   const titles = [];
