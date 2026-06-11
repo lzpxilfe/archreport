@@ -24,7 +24,15 @@
     if (typeof console === "undefined" || !console.warn) {
       return;
     }
-    console.warn(`${DEBUG_PREFIX} ${message}`, detail || "");
+    let suffix = "";
+    if (detail) {
+      try {
+        suffix = `: ${JSON.stringify(detail)}`;
+      } catch (_error) {
+        suffix = `: ${String(detail)}`;
+      }
+    }
+    console.warn(`${DEBUG_PREFIX} ${message}${suffix}`);
   }
 
   function sourceName() {
@@ -95,7 +103,10 @@
   }
 
   function buildEminwonContexts() {
-    const detailContexts = extractors.extractEminwonContextsFromDocument(document);
+    let detailContexts = extractors.extractEminwonContextsFromDocument(document);
+    if (!detailContexts || detailContexts.length === 0) {
+      detailContexts = buildEminwonContextsFromVisibleRows();
+    }
     if (!detailContexts || detailContexts.length === 0) {
       return [];
     }
@@ -108,6 +119,44 @@
         capturedAt: Date.now()
       }))
     );
+  }
+
+  function extractPdfFilenameFromText(text) {
+    const normalized = extractors.normalizeSpaces(text);
+    const match = normalized.match(/([^\\/:*?"<>|\r\n]+?\.pdf)\b/i);
+    return extractors.normalizeSpaces((match && match[1]) || "");
+  }
+
+  function buildEminwonContextsFromVisibleRows() {
+    const facts = extractors.extractTableFactsFromDocument(document);
+    const checkboxes = Array.from(document.querySelectorAll("input[type='checkbox']"))
+      .filter(isFileCheckbox);
+    const files = [];
+
+    checkboxes.forEach((checkbox) => {
+      const fileTitle = extractPdfFilenameFromText(getClosestText(checkbox));
+      if (fileTitle && !files.some((file) => file.fileTitle === fileTitle)) {
+        files.push({ fileTitle });
+      }
+    });
+
+    if (files.length === 0) {
+      return [];
+    }
+
+    const reportTitle = facts.reportTitle || extractors.deriveReportTitleFromUploadedFiles(files);
+    if (!reportTitle) {
+      return [];
+    }
+
+    return files.map((file, index) => Object.assign({}, facts, {
+      reportTitle,
+      sourceKind: "e-minwon",
+      fileTitle: file.fileTitle,
+      originalFilename: file.fileTitle,
+      attachmentTitle: "",
+      sequenceNumber: files.length > 1 ? String(index + 1) : ""
+    }));
   }
 
   function sendContext(context) {
@@ -493,19 +542,15 @@
     const plan = buildEminwonDownloadPlan(control);
 
     if (!plan.ok || plan.targetIndexes.length <= 1) {
-      const localContextCount = buildEminwonContexts().length;
-      if (triggerKind === "all" && (!plan.ok || localContextCount > 1)) {
-        const childFrameCount = broadcastEminwonQueueToChildFrames("");
-        if (!plan.ok && localContextCount === 0 && childFrameCount === 0) {
-          return false;
-        }
-        stopDownloadEvent(event);
-        debugWarn("blocked e-minwon ZIP trigger but could not start queue", {
-          reason: plan.reason,
-          detail: plan.detail,
-          childFrameCount
+      if (triggerKind === "all") {
+        debugWarn("e-minwon ZIP trigger observed without local queue plan", {
+          reason: plan.reason || "single-target",
+          detail: plan.detail || {
+            targetCount: plan.targetIndexes && plan.targetIndexes.length
+          },
+          localContextCount: buildEminwonContexts().length,
+          href: location.href
         });
-        return true;
       }
       return false;
     }
