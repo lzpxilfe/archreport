@@ -486,6 +486,33 @@ test("background leaves e-minwon ZIP untouched while extension is disabled", () 
   }
 });
 
+test("background updates toolbar badge for enabled state", () => {
+  const badgeTexts = [];
+  const titles = [];
+  global.chrome = {
+    action: {
+      setBadgeText(details) {
+        badgeTexts.push(details.text);
+      },
+      setBadgeBackgroundColor() {},
+      setTitle(details) {
+        titles.push(details.title);
+      }
+    }
+  };
+
+  try {
+    background.updateActionState({ enabled: false });
+    background.updateActionState({ enabled: true });
+
+    assert.deepEqual(badgeTexts, ["OFF", ""]);
+    assert.match(titles[0], /꺼짐/);
+    assert.ok(!/꺼짐/.test(titles[1]));
+  } finally {
+    delete global.chrome;
+  }
+});
+
 test("background consumes e-minwon queue contexts in queue order", () => {
   background._state.reset();
   const now = Date.now();

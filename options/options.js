@@ -157,6 +157,22 @@
     els.previewAttachment.value = filename.renderFilename(sampleAttachment, settings);
   }
 
+  function updateEnabledUi() {
+    const enabled = settings.enabled !== false;
+    if (els.enabledToggle) {
+      els.enabledToggle.checked = enabled;
+    }
+    if (els.enabledLabel) {
+      els.enabledLabel.textContent = enabled ? "도구 켜짐" : "도구 꺼짐";
+    }
+    if (els.enabledHelp) {
+      els.enabledHelp.textContent = enabled
+        ? "파일명 변경과 ZIP 우회가 작동합니다."
+        : "페이지와 다운로드를 건드리지 않습니다.";
+    }
+    document.body.classList.toggle("tool-disabled", !enabled);
+  }
+
   function addToken(token, index) {
     const next = cloneToken(token);
     if (Number.isInteger(index)) {
@@ -356,6 +372,7 @@
   function bindControls() {
     els.enabledToggle.addEventListener("change", () => {
       settings.enabled = els.enabledToggle.checked;
+      updateEnabledUi();
       save();
     });
 
@@ -364,7 +381,7 @@
         enabled: true,
         template: filename.clone(filename.DEFAULT_TEMPLATE)
       });
-      els.enabledToggle.checked = settings.enabled;
+      updateEnabledUi();
       renderRecipe();
       renderPresets();
       save();
@@ -389,6 +406,8 @@
 
   function cacheElements() {
     els.enabledToggle = document.getElementById("enabled-toggle");
+    els.enabledLabel = document.getElementById("enabled-toggle-label");
+    els.enabledHelp = document.getElementById("enabled-toggle-help");
     els.presetList = document.getElementById("preset-list");
     els.recipeList = document.getElementById("recipe-list");
     els.fieldPalette = document.getElementById("field-palette");
@@ -563,7 +582,7 @@
 
     chrome.storage.sync.get(STORAGE_KEY, (result) => {
       settings = filename.mergeSettings(result && result[STORAGE_KEY]);
-      els.enabledToggle.checked = settings.enabled;
+      updateEnabledUi();
       renderPresets();
       renderPalette();
       renderRecipe();

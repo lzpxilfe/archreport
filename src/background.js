@@ -40,12 +40,39 @@ function consumeLastError() {
   return typeof chrome !== "undefined" && chrome.runtime ? chrome.runtime.lastError : null;
 }
 
+function updateActionState(settings) {
+  if (!hasChromeApi(["action"])) {
+    return;
+  }
+
+  const enabled = ArchReportFilename.mergeSettings(settings).enabled !== false;
+  if (chrome.action.setBadgeText) {
+    chrome.action.setBadgeText({
+      text: enabled ? "" : "OFF"
+    });
+  }
+  if (chrome.action.setBadgeBackgroundColor) {
+    chrome.action.setBadgeBackgroundColor({
+      color: "#9b5b1c"
+    });
+  }
+  if (chrome.action.setTitle) {
+    chrome.action.setTitle({
+      title: enabled
+        ? "국가유산 보고서 파일명 설정"
+        : "국가유산 보고서 파일명 설정 - 꺼짐"
+    });
+  }
+}
+
 function loadSettings() {
   if (!hasChromeApi(["storage", "sync", "get"])) {
+    updateActionState(settingsCache);
     return;
   }
   chrome.storage.sync.get(STORAGE_KEY, (result) => {
     settingsCache = ArchReportFilename.mergeSettings(result && result[STORAGE_KEY]);
+    updateActionState(settingsCache);
   });
 }
 
@@ -501,6 +528,7 @@ function registerChromeListeners() {
       return;
     }
     settingsCache = ArchReportFilename.mergeSettings(changes[STORAGE_KEY].newValue);
+    updateActionState(settingsCache);
   });
 
   chrome.runtime.onMessage.addListener((message, sender) => {
@@ -655,6 +683,7 @@ if (typeof module !== "undefined" && module.exports) {
     rememberTabSource,
     requestEminwonQueue,
     sendQueueMessage,
+    updateActionState,
     zipState
   };
 }

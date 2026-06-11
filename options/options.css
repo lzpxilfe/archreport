@@ -280,17 +280,83 @@ h2 {
 .switch {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 12px;
+  min-width: 250px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 140ms ease, background 140ms ease;
 }
 
 .switch input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent);
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  background: #aeb8b1;
+  transition: background 140ms ease;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(28, 36, 31, 0.22);
+  transition: transform 140ms ease;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--accent);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(20px);
+}
+
+.switch:has(input:focus-visible) {
+  outline: 3px solid rgba(47, 111, 94, 0.24);
+  outline-offset: 2px;
+}
+
+.switch-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.switch-text strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.switch-text small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+body.tool-disabled .switch {
+  border-color: #d8b899;
+  background: #fff8ed;
+}
+
+body.tool-disabled .switch-text strong {
+  color: var(--warn);
 }
 
 .statusbar {
@@ -405,6 +471,7 @@ body.is-popup .page-shell {
 
 body.is-popup .topbar {
   margin-bottom: 12px;
+  align-items: stretch;
 }
 
 body.is-popup .topbar h1 {
@@ -414,6 +481,12 @@ body.is-popup .topbar h1 {
 body.is-popup .topbar .subtitle {
   font-size: 12px;
   margin-top: 4px;
+}
+
+body.is-popup .switch {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
 }
 
 body.is-popup .tab-nav {
@@ -497,4 +570,3 @@ body.is-popup .recipe-list {
   min-height: 80px;
   padding: 8px;
 }
-
