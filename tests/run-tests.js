@@ -81,6 +81,10 @@ function readFixture(name) {
   return fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");
 }
 
+function readJsonFromRoot(name) {
+  return JSON.parse(fs.readFileSync(path.join(__dirname, "..", name), "utf8"));
+}
+
 function test(name, run) {
   try {
     run();
@@ -484,6 +488,14 @@ test("background leaves e-minwon ZIP untouched while extension is disabled", () 
   } finally {
     delete global.chrome;
   }
+});
+
+test("manifest and package versions stay aligned", () => {
+  const manifest = readJsonFromRoot("manifest.json");
+  const packageJson = readJsonFromRoot("package.json");
+
+  assert.equal(manifest.version, "0.1.1");
+  assert.equal(packageJson.version, manifest.version);
 });
 
 test("background updates toolbar badge for enabled state", () => {

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "국가유산 보고서 파일명 정리",
   "description": "국가유산 보고서 PDF를 페이지 정보에 맞춘 읽기 좋은 파일명으로 저장합니다.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "permissions": [
     "downloads",
     "storage"
@@ -34,6 +34,7 @@
         "*://*.nrich.go.kr/*"
       ],
       "js": [
+        "src/constants.js",
         "src/filename.js",
         "src/page-extractors.js",
         "src/content.js"

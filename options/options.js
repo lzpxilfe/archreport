@@ -1,7 +1,8 @@
 (function initOptionsPage() {
   "use strict";
 
-  const STORAGE_KEY = "archReportSettings";
+  const constants = globalThis.ArchReportConstants;
+  const STORAGE_KEY = constants.SETTINGS_STORAGE_KEY;
   const filename = globalThis.ArchReportFilename;
 
   const citationTemplate = filename.clone(filename.DEFAULT_TEMPLATE);
@@ -139,6 +140,27 @@
 
   function templatesEqual(left, right) {
     return JSON.stringify(left || []) === JSON.stringify(right || []);
+  }
+
+  function hostMatches(hostname, host) {
+    return hostname === host || hostname.endsWith(`.${host}`);
+  }
+
+  function isSupportedPageUrl(url) {
+    try {
+      const hostname = new URL(url).hostname;
+      return Object.values(constants.HOSTS).some((host) => hostMatches(hostname, host));
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function isEminwonPageUrl(url) {
+    try {
+      return hostMatches(new URL(url).hostname, constants.HOSTS.EMINWON);
+    } catch (_error) {
+      return false;
+    }
   }
 
   function save() {
@@ -470,7 +492,7 @@
         copyBtn.textContent = originalText;
         copyBtn.style.background = "";
         copyBtn.style.borderColor = "";
-      }, 1500);
+      }, constants.TIMING.COPIED_STATE_MS);
     };
 
     copyBtn.addEventListener("click", () => {
@@ -501,7 +523,7 @@
       }
 
       const url = activeTab.url || "";
-      const isSupported = /heritage\.go\.kr|cha\.go\.kr|khs\.go\.kr|e-minwon\.go\.kr|nrich\.go\.kr/.test(url);
+      const isSupported = isSupportedPageUrl(url);
       
       if (!isSupported) {
         citationInput.value = "";
@@ -537,7 +559,7 @@
         };
 
         const askCurrentTab = () => {
-          chrome.tabs.sendMessage(activeTab.id, { type: "get-report-title" }, (response) => {
+          chrome.tabs.sendMessage(activeTab.id, { type: constants.MESSAGES.GET_REPORT_TITLE }, (response) => {
             if (!chrome.runtime.lastError && isUsableReportMetadata(response)) {
               applyMetadata(response);
               return;
@@ -552,13 +574,13 @@
           });
         };
 
-        if (/e-minwon\.go\.kr/.test(url)) {
+        if (isEminwonPageUrl(url)) {
           askCurrentTab();
         } else if (isUsableReportMetadata(cached)) {
           applyMetadata(cached);
         } else {
           // Fallback: Ask content script directly
-          chrome.tabs.sendMessage(activeTab.id, { type: "get-report-title" }, (response) => {
+          chrome.tabs.sendMessage(activeTab.id, { type: constants.MESSAGES.GET_REPORT_TITLE }, (response) => {
             if (chrome.runtime.lastError || !isUsableReportMetadata(response)) {
               citationInput.value = "";
               citationInput.placeholder = "보고서 상세 페이지가 아닙니다.";

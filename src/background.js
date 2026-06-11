@@ -1,22 +1,31 @@
 if (typeof importScripts === "function") {
-  importScripts("filename.js");
-} else if (typeof require === "function" && typeof globalThis.ArchReportFilename === "undefined") {
-  globalThis.ArchReportFilename = require("./filename.js");
+  importScripts("constants.js", "filename.js");
+} else if (typeof require === "function") {
+  if (typeof globalThis.ArchReportConstants === "undefined") {
+    globalThis.ArchReportConstants = require("./constants.js");
+  }
+  if (typeof globalThis.ArchReportFilename === "undefined") {
+    globalThis.ArchReportFilename = require("./filename.js");
+  }
 }
 
-const MESSAGE_TYPE = "arch-report-download-context";
-const PAGE_READY_TYPE = "arch-report-page-ready";
-const START_EMINWON_QUEUE_TYPE = "arch-report-start-eminwon-download-queue";
-const EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE = "arch-report-eminwon-queue-download-started";
-const STORAGE_KEY = "archReportSettings";
+const constants = globalThis.ArchReportConstants;
+const filenameModule = globalThis.ArchReportFilename;
+const MESSAGE_TYPE = constants.MESSAGES.DOWNLOAD_CONTEXT;
+const PAGE_READY_TYPE = constants.MESSAGES.PAGE_READY;
+const START_EMINWON_QUEUE_TYPE = constants.MESSAGES.START_EMINWON_QUEUE;
+const EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE = constants.MESSAGES.EMINWON_QUEUE_DOWNLOAD_STARTED;
+const REPORT_METADATA_EXTRACTED_TYPE = constants.MESSAGES.REPORT_METADATA_EXTRACTED;
+const STORAGE_KEY = constants.SETTINGS_STORAGE_KEY;
 const CONTEXT_TTL_MS = 30 * 60 * 1000;
 const MAX_CONTEXTS = 30;
 const DOWNLOAD_STATE_TTL_MS = 10 * 60 * 1000;
 const ZIP_REMOVE_RETRY_DELAYS_MS = [0, 500, 2000];
-const EMINWON_HOST = "e-minwon.go.kr";
+const EMINWON_HOST = constants.HOSTS.EMINWON;
+const EMINWON_SOURCE = constants.SOURCES.EMINWON;
 const DOWNLOAD_DEBUG_PREFIX = "[archreport]";
 
-let settingsCache = ArchReportFilename.mergeSettings();
+let settingsCache = filenameModule.mergeSettings();
 let pendingContexts = [];
 let tabSources = {};
 let zipDownloadStates = {};
@@ -45,22 +54,20 @@ function updateActionState(settings) {
     return;
   }
 
-  const enabled = ArchReportFilename.mergeSettings(settings).enabled !== false;
+  const enabled = filenameModule.mergeSettings(settings).enabled !== false;
   if (chrome.action.setBadgeText) {
     chrome.action.setBadgeText({
-      text: enabled ? "" : "OFF"
+      text: enabled ? "" : constants.ACTION.DISABLED_BADGE_TEXT
     });
   }
   if (chrome.action.setBadgeBackgroundColor) {
     chrome.action.setBadgeBackgroundColor({
-      color: "#9b5b1c"
+      color: constants.ACTION.DISABLED_BADGE_COLOR
     });
   }
   if (chrome.action.setTitle) {
     chrome.action.setTitle({
-      title: enabled
-        ? "국가유산 보고서 파일명 설정"
-        : "국가유산 보고서 파일명 설정 - 꺼짐"
+      title: enabled ? constants.ACTION.DEFAULT_TITLE : constants.ACTION.DISABLED_TITLE
     });
   }
 }
@@ -71,7 +78,7 @@ function loadSettings() {
     return;
   }
   chrome.storage.sync.get(STORAGE_KEY, (result) => {
-    settingsCache = ArchReportFilename.mergeSettings(result && result[STORAGE_KEY]);
+    settingsCache = filenameModule.mergeSettings(result && result[STORAGE_KEY]);
     updateActionState(settingsCache);
   });
 }
@@ -121,7 +128,7 @@ function hostFromUrl(url) {
 }
 
 function basename(value) {
-  return ArchReportFilename.filenameFromUrl(value || "");
+  return filenameModule.filenameFromUrl(value || "");
 }
 
 function downloadValues(item) {
@@ -165,9 +172,9 @@ function rememberTabSource(tabId, source, pageUrl, frameId) {
   }
 
   const entry = ensureTabSource(tabId);
-  const isEminwon = source === "e-minwon" || String(pageUrl || "").includes(EMINWON_HOST);
+  const isEminwon = source === EMINWON_SOURCE || String(pageUrl || "").includes(EMINWON_HOST);
   if (isEminwon || entry.source === "unknown") {
-    entry.source = isEminwon ? "e-minwon" : source;
+    entry.source = isEminwon ? EMINWON_SOURCE : source;
   }
   if (pageUrl) {
     entry.pageUrl = pageUrl;
@@ -196,7 +203,7 @@ function eminwonFrameIds(tabId) {
   return Object.entries(source.frames)
     .filter(([, frame]) =>
       frame &&
-      (frame.source === "e-minwon" || String(frame.pageUrl || "").includes(EMINWON_HOST))
+      (frame.source === EMINWON_SOURCE || String(frame.pageUrl || "").includes(EMINWON_HOST))
     )
     .map(([frameId]) => Number(frameId))
     .filter((frameId) => Number.isInteger(frameId) && frameId >= 0);
@@ -208,13 +215,13 @@ function isLikelyEminwonDownload(item) {
   }
 
   const source = item && Number.isInteger(item.tabId) ? tabSource(item.tabId) : null;
-  if (source && (source.source === "e-minwon" || String(source.pageUrl || "").includes(EMINWON_HOST))) {
+  if (source && (source.source === EMINWON_SOURCE || String(source.pageUrl || "").includes(EMINWON_HOST))) {
     return true;
   }
 
   return pendingContexts.some((entry) =>
     entry.context &&
-    entry.context.source === "e-minwon" &&
+    entry.context.source === EMINWON_SOURCE &&
     item &&
     item.tabId >= 0 &&
     entry.tabId === item.tabId
@@ -451,7 +458,7 @@ function chooseContextEntry(item) {
   const queueEntry = pendingContexts
     .filter((entry) =>
       entry.context &&
-      entry.context.source === "e-minwon" &&
+      entry.context.source === EMINWON_SOURCE &&
       entry.context.queueBatchId &&
       item &&
       (
@@ -496,7 +503,7 @@ function chooseContext(item) {
 
 function notifyEminwonQueueDownloadStarted(entry, downloadItem, suggestedFilename) {
   const context = entry && entry.context;
-  if (!context || context.source !== "e-minwon" || !context.queueBatchId) {
+  if (!context || context.source !== EMINWON_SOURCE || !context.queueBatchId) {
     return false;
   }
   if (!hasChromeApi(["tabs", "sendMessage"]) || !Number.isInteger(entry.tabId) || entry.tabId < 0) {
@@ -527,7 +534,7 @@ function registerChromeListeners() {
     if (areaName !== "sync" || !changes[STORAGE_KEY]) {
       return;
     }
-    settingsCache = ArchReportFilename.mergeSettings(changes[STORAGE_KEY].newValue);
+    settingsCache = filenameModule.mergeSettings(changes[STORAGE_KEY].newValue);
     updateActionState(settingsCache);
   });
 
@@ -536,10 +543,12 @@ function registerChromeListeners() {
       return;
     }
 
-    if (message.type === "report-metadata-extracted" && sender && sender.tab) {
+    if (message.type === REPORT_METADATA_EXTRACTED_TYPE && sender && sender.tab) {
       const tabId = sender.tab.id;
       const metadata = message.metadata;
-      const source = metadata && metadata.url && metadata.url.includes(EMINWON_HOST) ? "e-minwon" : "unknown";
+      const source = metadata && metadata.url && metadata.url.includes(EMINWON_HOST)
+        ? EMINWON_SOURCE
+        : constants.SOURCES.UNKNOWN;
       rememberTabSource(tabId, source, metadata && metadata.url, sender.frameId);
       const key = `reportMetadata_${tabId}`;
       chrome.storage.local.get(key, (result) => {
@@ -557,7 +566,7 @@ function registerChromeListeners() {
     }
 
     if (message.type === MESSAGE_TYPE && message.context) {
-      const context = ArchReportFilename.withDerivedContext(message.context);
+      const context = filenameModule.withDerivedContext(message.context);
       context.capturedAt = context.capturedAt || Date.now();
 
       const tabId = sender && sender.tab ? sender.tab.id : -1;
@@ -627,7 +636,7 @@ function registerChromeListeners() {
     }
 
     const context = entry.context;
-    const filename = ArchReportFilename.renderFilename(context, settingsCache, downloadItem);
+    const filename = filenameModule.renderFilename(context, settingsCache, downloadItem);
     suggest({
       filename,
       conflictAction: "uniquify"
@@ -666,10 +675,10 @@ if (typeof module !== "undefined" && module.exports) {
         pendingContexts = [];
         tabSources = {};
         zipDownloadStates = {};
-        settingsCache = ArchReportFilename.mergeSettings();
+        settingsCache = filenameModule.mergeSettings();
       },
       setSettings(settings) {
-        settingsCache = ArchReportFilename.mergeSettings(settings);
+        settingsCache = filenameModule.mergeSettings(settings);
       }
     },
     cleanupContexts,

@@ -1,17 +1,22 @@
 (function initContentScript() {
   "use strict";
 
-  const MESSAGE_TYPE = "arch-report-download-context";
-  const PAGE_READY_TYPE = "arch-report-page-ready";
-  const START_EMINWON_QUEUE_TYPE = "arch-report-start-eminwon-download-queue";
-  const EMINWON_CONTEXT_BRIDGE_TYPE = "arch-report-eminwon-context-bridge";
-  const EMINWON_CONTEXT_REQUEST_TYPE = "arch-report-eminwon-context-request";
-  const EMINWON_QUEUE_BRIDGE_TYPE = "arch-report-eminwon-download-queue-bridge";
-  const EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE = "arch-report-eminwon-queue-download-started";
-  const STORAGE_KEY = "archReportSettings";
-  const EMINWON_QUEUE_ACK_TIMEOUT_MS = 10000;
-  const EMINWON_QUEUE_AFTER_ACK_DELAY_MS = 350;
-  const EMINWON_QUEUE_CLICK_DELAY_MS = 120;
+  const constants = globalThis.ArchReportConstants;
+  const MESSAGE_TYPE = constants && constants.MESSAGES.DOWNLOAD_CONTEXT;
+  const PAGE_READY_TYPE = constants && constants.MESSAGES.PAGE_READY;
+  const START_EMINWON_QUEUE_TYPE = constants && constants.MESSAGES.START_EMINWON_QUEUE;
+  const EMINWON_CONTEXT_BRIDGE_TYPE = constants && constants.MESSAGES.EMINWON_CONTEXT_BRIDGE;
+  const EMINWON_CONTEXT_REQUEST_TYPE = constants && constants.MESSAGES.EMINWON_CONTEXT_REQUEST;
+  const EMINWON_QUEUE_BRIDGE_TYPE = constants && constants.MESSAGES.EMINWON_QUEUE_BRIDGE;
+  const EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE = constants && constants.MESSAGES.EMINWON_QUEUE_DOWNLOAD_STARTED;
+  const REPORT_METADATA_EXTRACTED_TYPE = constants && constants.MESSAGES.REPORT_METADATA_EXTRACTED;
+  const GET_REPORT_TITLE_TYPE = constants && constants.MESSAGES.GET_REPORT_TITLE;
+  const STORAGE_KEY = constants && constants.SETTINGS_STORAGE_KEY;
+  const EMINWON_QUEUE_ACK_TIMEOUT_MS = constants && constants.TIMING.EMINWON_QUEUE_ACK_TIMEOUT_MS;
+  const EMINWON_QUEUE_AFTER_ACK_DELAY_MS = constants && constants.TIMING.EMINWON_QUEUE_AFTER_ACK_DELAY_MS;
+  const EMINWON_QUEUE_CLICK_DELAY_MS = constants && constants.TIMING.EMINWON_QUEUE_CLICK_DELAY_MS;
+  const EMINWON_CHILD_QUEUE_TIMEOUT_MS = constants && constants.TIMING.EMINWON_CHILD_QUEUE_TIMEOUT_MS;
+  const PAGE_INIT_RETRY_DELAYS_MS = constants && constants.TIMING.PAGE_INIT_RETRY_DELAYS_MS;
   const EMINWON_CONTROL_SELECTOR = "a, button, input, [onclick]";
   const EMINWON_FILE_CHECKBOX_HEADER_PATTERN = /\uD30C\uC77C\s*\uC774\uB984/;
   const EMINWON_CHILD_INTERCEPT_MARK = "__archReportEminwonChildInterceptInstalled";
@@ -25,7 +30,7 @@
   let bridgedEminwonContexts = [];
   let extensionEnabled = true;
 
-  if (!extractors || !filename) {
+  if (!constants || !extractors || !filename) {
     return;
   }
 
@@ -86,16 +91,20 @@
 
   function sourceName() {
     const host = location.hostname;
-    if (host.includes("nrich.go.kr")) {
-      return "nrich";
+    if (host.includes(constants.HOSTS.NRICH)) {
+      return constants.SOURCES.NRICH;
     }
-    if (host.includes("e-minwon.go.kr")) {
-      return "e-minwon";
+    if (host.includes(constants.HOSTS.EMINWON)) {
+      return constants.SOURCES.EMINWON;
     }
-    if (host.includes("heritage.go.kr") || host.includes("cha.go.kr") || host.includes("khs.go.kr")) {
-      return "heritage";
+    if (
+      host.includes(constants.HOSTS.HERITAGE) ||
+      host.includes(constants.HOSTS.CHA) ||
+      host.includes(constants.HOSTS.KHS)
+    ) {
+      return constants.SOURCES.HERITAGE;
     }
-    return "unknown";
+    return constants.SOURCES.UNKNOWN;
   }
 
   function hasRaonUploadControls(doc) {
@@ -109,7 +118,7 @@
   }
 
   function isEminwonContextFrame() {
-    return sourceName() === "e-minwon" ||
+    return sourceName() === constants.SOURCES.EMINWON ||
       bridgedEminwonContexts.length > 0 ||
       hasRaonUploadControls(document);
   }
@@ -127,7 +136,7 @@
       return null;
     }
     return filename.withDerivedContext(Object.assign({}, context, {
-      source: "e-minwon",
+      source: constants.SOURCES.EMINWON,
       pageUrl: context.pageUrl || location.href,
       pageTitle: context.pageTitle || document.title,
       capturedAt: Date.now()
@@ -249,7 +258,7 @@
 
     return files.map((file, index) => Object.assign({}, facts, {
       reportTitle,
-      sourceKind: "e-minwon",
+      sourceKind: constants.SOURCES.EMINWON,
       fileTitle: file.fileTitle,
       originalFilename: file.fileTitle,
       attachmentTitle: "",
@@ -275,7 +284,7 @@
     }
     chrome.runtime.sendMessage({
       type: PAGE_READY_TYPE,
-      source: isEminwonContextFrame() ? "e-minwon" : sourceName(),
+      source: isEminwonContextFrame() ? constants.SOURCES.EMINWON : sourceName(),
       pageUrl: bridgedEminwonContexts[0] && bridgedEminwonContexts[0].pageUrl || location.href
     }, function ignoreResponse() {
       void chrome.runtime.lastError;
@@ -300,7 +309,7 @@
   }
 
   function broadcastEminwonContextsToChildFrames() {
-    if (!extensionEnabled || sourceName() !== "e-minwon") {
+    if (!extensionEnabled || sourceName() !== constants.SOURCES.EMINWON) {
       return 0;
     }
     const contexts = buildEminwonContexts();
@@ -319,7 +328,7 @@
   }
 
   function requestEminwonContextsFromParent() {
-    if (!extensionEnabled || sourceName() === "e-minwon" || !window.parent || window.parent === window) {
+    if (!extensionEnabled || sourceName() === constants.SOURCES.EMINWON || !window.parent || window.parent === window) {
       return;
     }
     window.parent.postMessage({
@@ -891,7 +900,7 @@
           childFrameCount: frames.length
         }
       });
-    }, 1200) : null;
+    }, EMINWON_CHILD_QUEUE_TIMEOUT_MS) : null;
 
     frames.forEach((frame) => {
       const message = {
@@ -1099,7 +1108,7 @@
   }
 
   function installEminwonChildFrameInterceptors() {
-    if (!extensionEnabled || sourceName() !== "e-minwon") {
+    if (!extensionEnabled || sourceName() !== constants.SOURCES.EMINWON) {
       return 0;
     }
 
@@ -1271,7 +1280,7 @@
       return true;
     }
 
-    if (message && message.type === "get-report-title") {
+    if (message && message.type === GET_REPORT_TITLE_TYPE) {
       if (isEminwonContextFrame()) {
         const context = buildEminwonContexts()[0];
         sendResponse(eminwonMetadataFromContext(context) || { reportTitle: "" });
@@ -1291,7 +1300,7 @@
       const metadata = eminwonMetadataFromContext(buildEminwonContexts()[0]);
       if (metadata) {
         chrome.runtime.sendMessage({
-          type: "report-metadata-extracted",
+          type: REPORT_METADATA_EXTRACTED_TYPE,
           metadata
         }, () => {
           void chrome.runtime.lastError;
@@ -1314,7 +1323,7 @@
       const agency = tableFacts.agency || extractors.extractAgencyFromText(visibleText);
 
       chrome.runtime.sendMessage({
-        type: "report-metadata-extracted",
+        type: REPORT_METADATA_EXTRACTED_TYPE,
         metadata: {
           reportTitle,
           year,
@@ -1353,8 +1362,8 @@
     } else {
       document.addEventListener("DOMContentLoaded", runPageInitialization);
     }
-    window.setTimeout(runPageInitialization, 1000);
-    window.setTimeout(runPageInitialization, 3000);
-    window.setTimeout(runPageInitialization, 6000);
+    PAGE_INIT_RETRY_DELAYS_MS.forEach((delay) => {
+      window.setTimeout(runPageInitialization, delay);
+    });
   });
 })();
