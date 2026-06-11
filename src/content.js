@@ -4,17 +4,24 @@
   const MESSAGE_TYPE = "arch-report-download-context";
   const PAGE_READY_TYPE = "arch-report-page-ready";
   const START_EMINWON_QUEUE_TYPE = "arch-report-start-eminwon-download-queue";
+  const EMINWON_CONTEXT_BRIDGE_TYPE = "arch-report-eminwon-context-bridge";
+  const EMINWON_CONTEXT_REQUEST_TYPE = "arch-report-eminwon-context-request";
   const EMINWON_QUEUE_BRIDGE_TYPE = "arch-report-eminwon-download-queue-bridge";
-  const EMINWON_QUEUE_DELAY_MS = 900;
-  const EMINWON_QUEUE_CLICK_DELAY_MS = 50;
+  const EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE = "arch-report-eminwon-queue-download-started";
+  const EMINWON_QUEUE_ACK_TIMEOUT_MS = 10000;
+  const EMINWON_QUEUE_AFTER_ACK_DELAY_MS = 350;
+  const EMINWON_QUEUE_CLICK_DELAY_MS = 120;
   const EMINWON_CONTROL_SELECTOR = "a, button, input, [onclick]";
   const EMINWON_FILE_CHECKBOX_HEADER_PATTERN = /\uD30C\uC77C\s*\uC774\uB984/;
+  const EMINWON_CHILD_INTERCEPT_MARK = "__archReportEminwonChildInterceptInstalled";
   const PDF_FILENAME_PATTERN = /\.pdf\b/i;
   const DEBUG_PREFIX = "[archreport]";
   const extractors = globalThis.ArchReportExtractors;
   const filename = globalThis.ArchReportFilename;
   let eminwonDownloadQueueRunning = false;
   let eminwonQueueClickInProgress = false;
+  let eminwonQueueWaiter = null;
+  let bridgedEminwonContexts = [];
 
   if (!extractors || !filename) {
     return;
@@ -47,6 +54,57 @@
       return "heritage";
     }
     return "unknown";
+  }
+
+  function hasRaonUploadControls(doc) {
+    const root = doc || document;
+    return Boolean(
+      root.getElementById("button_download") ||
+      root.getElementById("button_download_all") ||
+      root.querySelector("input[id^='chk_file_']") ||
+      root.querySelector("iframe[id^='raonkuploader_frame_']")
+    );
+  }
+
+  function isEminwonContextFrame() {
+    return sourceName() === "e-minwon" ||
+      bridgedEminwonContexts.length > 0 ||
+      hasRaonUploadControls(document);
+  }
+
+  function clonePlain(value) {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function normalizeEminwonContext(context) {
+    if (!context || typeof context !== "object") {
+      return null;
+    }
+    return filename.withDerivedContext(Object.assign({}, context, {
+      source: "e-minwon",
+      pageUrl: context.pageUrl || location.href,
+      pageTitle: context.pageTitle || document.title,
+      capturedAt: Date.now()
+    }));
+  }
+
+  function storeBridgedEminwonContexts(contexts) {
+    if (!Array.isArray(contexts) || contexts.length === 0) {
+      return false;
+    }
+    const normalized = contexts
+      .map(normalizeEminwonContext)
+      .filter(Boolean);
+    if (normalized.length === 0) {
+      return false;
+    }
+    bridgedEminwonContexts = normalized;
+    reportPageReady();
+    return true;
   }
 
   function pageText() {
@@ -104,6 +162,9 @@
 
   function buildEminwonContexts() {
     let detailContexts = extractors.extractEminwonContextsFromDocument(document);
+    if ((!detailContexts || detailContexts.length === 0) && bridgedEminwonContexts.length > 0) {
+      detailContexts = bridgedEminwonContexts;
+    }
     if (!detailContexts || detailContexts.length === 0) {
       detailContexts = buildEminwonContextsFromVisibleRows();
     }
@@ -111,14 +172,9 @@
       return [];
     }
 
-    return detailContexts.map((ctx) =>
-      filename.withDerivedContext(Object.assign({}, ctx, {
-        source: "e-minwon",
-        pageUrl: location.href,
-        pageTitle: document.title,
-        capturedAt: Date.now()
-      }))
-    );
+    return detailContexts
+      .map(normalizeEminwonContext)
+      .filter(Boolean);
   }
 
   function extractPdfFilenameFromText(text) {
@@ -177,11 +233,56 @@
     }
     chrome.runtime.sendMessage({
       type: PAGE_READY_TYPE,
-      source: sourceName(),
-      pageUrl: location.href
+      source: isEminwonContextFrame() ? "e-minwon" : sourceName(),
+      pageUrl: bridgedEminwonContexts[0] && bridgedEminwonContexts[0].pageUrl || location.href
     }, function ignoreResponse() {
       void chrome.runtime.lastError;
     });
+  }
+
+  function childFrames() {
+    return Array.from(document.querySelectorAll("iframe, frame"))
+      .filter((frame) => frame && frame.contentWindow);
+  }
+
+  function accessibleChildDocuments() {
+    return childFrames()
+      .map((frame) => {
+        try {
+          return frame.contentDocument || frame.contentWindow.document;
+        } catch (_error) {
+          return null;
+        }
+      })
+      .filter((doc) => doc && doc !== document);
+  }
+
+  function broadcastEminwonContextsToChildFrames() {
+    if (sourceName() !== "e-minwon") {
+      return 0;
+    }
+    const contexts = buildEminwonContexts();
+    if (contexts.length === 0) {
+      return 0;
+    }
+    const message = {
+      type: EMINWON_CONTEXT_BRIDGE_TYPE,
+      contexts: clonePlain(contexts) || contexts
+    };
+    const frames = childFrames();
+    frames.forEach((frame) => {
+      frame.contentWindow.postMessage(message, "*");
+    });
+    return frames.length;
+  }
+
+  function requestEminwonContextsFromParent() {
+    if (sourceName() === "e-minwon" || !window.parent || window.parent === window) {
+      return;
+    }
+    window.parent.postMessage({
+      type: EMINWON_CONTEXT_REQUEST_TYPE
+    }, "*");
   }
 
   function getClosestText(element) {
@@ -190,9 +291,14 @@
       return extractors.normalizeSpaces(row.textContent);
     }
 
+    const ownerDoc = element && element.ownerDocument || document;
+    const rootBody = ownerDoc && ownerDoc.body;
     let current = element && element.parentElement;
-    let fallback = extractors.normalizeSpaces(element && element.textContent);
-    for (let depth = 0; current && current !== document.body && depth < 4; depth += 1) {
+    let fallback = extractors.normalizeSpaces(
+      (element && (element.getAttribute && element.getAttribute("title"))) ||
+      (element && element.textContent)
+    );
+    for (let depth = 0; current && current !== rootBody && depth < 4; depth += 1) {
       const text = extractors.normalizeSpaces(current.textContent);
       fallback = fallback || text;
       if (PDF_FILENAME_PATTERN.test(text) || EMINWON_FILE_CHECKBOX_HEADER_PATTERN.test(text)) {
@@ -219,12 +325,13 @@
     return true;
   }
 
-  function getEminwonFileCheckboxes(contexts) {
+  function getEminwonFileCheckboxes(contexts, rootDoc) {
     const expectedCount = contexts.length;
     if (expectedCount === 0) {
       return [];
     }
-    const checkboxes = Array.from(document.querySelectorAll("input[type='checkbox']"))
+    const doc = rootDoc || document;
+    const checkboxes = Array.from(doc.querySelectorAll("input[type='checkbox']"))
       .filter(isFileCheckbox);
     const rowsWithPdf = checkboxes.filter((checkbox) => PDF_FILENAME_PATTERN.test(getClosestText(checkbox)));
 
@@ -250,11 +357,20 @@
     if (!element || typeof element.dispatchEvent !== "function") {
       return true;
     }
-    return element.dispatchEvent(new MouseEvent(type, {
+    const view = element.ownerDocument && element.ownerDocument.defaultView || window;
+    return element.dispatchEvent(new view.MouseEvent(type, {
       bubbles: true,
       cancelable: true,
-      view: window
+      view
     }));
+  }
+
+  function dispatchSimpleEvent(element, type) {
+    if (!element || typeof element.dispatchEvent !== "function") {
+      return true;
+    }
+    const view = element.ownerDocument && element.ownerDocument.defaultView || window;
+    return element.dispatchEvent(new view.Event(type, { bubbles: true }));
   }
 
   function activateElement(element) {
@@ -284,8 +400,8 @@
       return;
     }
     checkbox.checked = checked;
-    checkbox.dispatchEvent(new Event("input", { bubbles: true }));
-    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+    dispatchSimpleEvent(checkbox, "input");
+    dispatchSimpleEvent(checkbox, "change");
   }
 
   function isEnabledControl(control) {
@@ -324,12 +440,13 @@
     return score;
   }
 
-  function getEminwonRegularDownloadButton(triggerControl) {
+  function getEminwonRegularDownloadButton(triggerControl, rootDoc) {
     if (extractors.classifyEminwonDownloadControl(triggerControl) === "download") {
       return triggerControl;
     }
 
-    const controls = Array.from(document.querySelectorAll(EMINWON_CONTROL_SELECTOR))
+    const doc = rootDoc || document;
+    const controls = Array.from(doc.querySelectorAll(EMINWON_CONTROL_SELECTOR))
       .filter((control) =>
         control !== triggerControl &&
         isEnabledControl(control) &&
@@ -351,18 +468,33 @@
     return Object.assign({ ok: true }, plan);
   }
 
-  function buildEminwonDownloadPlan(control, forcedTriggerKind) {
+  function uniqueDocuments(docs) {
+    const seen = [];
+    (docs || []).forEach((doc) => {
+      if (doc && !seen.includes(doc)) {
+        seen.push(doc);
+      }
+    });
+    return seen;
+  }
+
+  function eminwonControlDocuments(control) {
+    const docs = [];
+    if (control && control.ownerDocument) {
+      docs.push(control.ownerDocument);
+    }
+    docs.push(document);
+    accessibleChildDocuments().forEach((doc) => docs.push(doc));
+    return uniqueDocuments(docs);
+  }
+
+  function buildEminwonDownloadPlanInDocument(rootDoc, control, forcedTriggerKind, contexts) {
     const triggerKind = forcedTriggerKind || extractors.classifyEminwonDownloadControl(control);
     if (!triggerKind) {
       return createPlanFailure("not-download-control");
     }
 
-    const contexts = buildEminwonContexts();
-    if (contexts.length === 0) {
-      return createPlanFailure("no-eminwon-contexts");
-    }
-
-    const checkboxes = getEminwonFileCheckboxes(contexts);
+    const checkboxes = getEminwonFileCheckboxes(contexts, rootDoc);
     if (checkboxes.length === 0) {
       return createPlanFailure("no-file-checkboxes", {
         contextCount: contexts.length
@@ -382,7 +514,7 @@
       checkedFileIndexes(checkboxes),
       triggerKind
     );
-    const downloadButton = getEminwonRegularDownloadButton(control);
+    const downloadButton = getEminwonRegularDownloadButton(control, rootDoc);
 
     if (!downloadButton) {
       return createPlanFailure("download-button-not-found", {
@@ -401,6 +533,29 @@
     });
   }
 
+  function buildEminwonDownloadPlan(control, forcedTriggerKind) {
+    const triggerKind = forcedTriggerKind || extractors.classifyEminwonDownloadControl(control);
+    if (!triggerKind) {
+      return createPlanFailure("not-download-control");
+    }
+
+    const contexts = buildEminwonContexts();
+    if (contexts.length === 0) {
+      return createPlanFailure("no-eminwon-contexts");
+    }
+
+    let lastFailure = null;
+    for (const rootDoc of eminwonControlDocuments(control)) {
+      const plan = buildEminwonDownloadPlanInDocument(rootDoc, control, triggerKind, contexts);
+      if (plan.ok) {
+        return plan;
+      }
+      lastFailure = plan;
+    }
+
+    return lastFailure || createPlanFailure("no-control-document");
+  }
+
   function sendSingleEminwonContextForNativeDownload(control) {
     if (eminwonDownloadQueueRunning) {
       return;
@@ -412,7 +567,10 @@
     }
 
     const contexts = buildEminwonContexts();
-    const checkboxes = getEminwonFileCheckboxes(contexts);
+    const checkboxes = getEminwonFileCheckboxes(
+      contexts,
+      control && control.ownerDocument || document
+    );
     const fileCount = Math.min(contexts.length, checkboxes.length);
     if (fileCount === 0) {
       return;
@@ -487,6 +645,50 @@
     }
   }
 
+  function settleEminwonQueueWaiter(result) {
+    if (!eminwonQueueWaiter) {
+      return false;
+    }
+    const waiter = eminwonQueueWaiter;
+    eminwonQueueWaiter = null;
+    window.clearTimeout(waiter.timeoutId);
+    waiter.done(result || {});
+    return true;
+  }
+
+  function clearEminwonQueueWaiter() {
+    if (!eminwonQueueWaiter) {
+      return;
+    }
+    window.clearTimeout(eminwonQueueWaiter.timeoutId);
+    eminwonQueueWaiter = null;
+  }
+
+  function matchesEminwonQueueWaiter(message) {
+    if (!eminwonQueueWaiter || !message) {
+      return false;
+    }
+    return message.queueBatchId === eminwonQueueWaiter.queueBatchId &&
+      String(message.queueOrder || "") === String(eminwonQueueWaiter.queueOrder || "");
+  }
+
+  function waitForEminwonQueueDownloadStart(context, done) {
+    clearEminwonQueueWaiter();
+    const timeoutId = window.setTimeout(() => {
+      settleEminwonQueueWaiter({
+        started: false,
+        reason: "download-start-timeout"
+      });
+    }, EMINWON_QUEUE_ACK_TIMEOUT_MS);
+
+    eminwonQueueWaiter = {
+      queueBatchId: context.queueBatchId,
+      queueOrder: context.queueOrder,
+      timeoutId,
+      done
+    };
+  }
+
   function runEminwonDownloadQueue(plan, options) {
     const opts = options || {};
     plan.queueBatchId = plan.queueBatchId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -498,6 +700,7 @@
       if (position >= plan.targetIndexes.length) {
         restoreCheckboxes(plan.checkboxes, originalStates);
         eminwonDownloadQueueRunning = false;
+        clearEminwonQueueWaiter();
         return;
       }
 
@@ -505,7 +708,13 @@
       plan.checkboxes.forEach((checkbox, index) => {
         setCheckboxChecked(checkbox, index === targetIndex);
       });
-      sendContext(contextForQueueDownload(plan, targetIndex, position));
+      const context = contextForQueueDownload(plan, targetIndex, position);
+      sendContext(context);
+
+      waitForEminwonQueueDownloadStart(context, () => {
+        position += 1;
+        window.setTimeout(runNext, EMINWON_QUEUE_AFTER_ACK_DELAY_MS);
+      });
 
       if (position === 0 && opts.immediateFirstClick) {
         clickEminwonDownloadButton(plan.downloadButton);
@@ -514,9 +723,6 @@
           clickEminwonDownloadButton(plan.downloadButton);
         }, EMINWON_QUEUE_CLICK_DELAY_MS);
       }
-
-      position += 1;
-      window.setTimeout(runNext, EMINWON_QUEUE_DELAY_MS);
     };
 
     runNext();
@@ -595,12 +801,12 @@
 
   function broadcastEminwonQueueToChildFrames(downloadId, callback) {
     const done = typeof callback === "function" ? callback : null;
-    const frames = Array.from(document.querySelectorAll("iframe, frame"))
-      .filter((frame) => frame && frame.contentWindow);
+    const frames = childFrames();
     if (frames.length === 0) {
       return 0;
     }
 
+    const contexts = buildEminwonContexts();
     let pending = frames.length;
     let finished = false;
     let lastResult = null;
@@ -628,6 +834,7 @@
       const message = {
         type: EMINWON_QUEUE_BRIDGE_TYPE,
         downloadId,
+        contexts: clonePlain(contexts) || contexts,
         expectsResponse: Boolean(done)
       };
 
@@ -696,7 +903,7 @@
       ? event.target.closest("a, button, input, [onclick], [data-url], [data-filename]")
       : null;
 
-    if (sourceName() === "e-minwon") {
+    if (isEminwonContextFrame()) {
       sendSingleEminwonContextForNativeDownload(control);
       return;
     }
@@ -806,7 +1013,7 @@
   }
 
   function handleDownloadIntercept(event) {
-    if (sourceName() === "e-minwon") {
+    if (isEminwonContextFrame()) {
       if (event.type === "pointerdown" || event.type === "mousedown") {
         return;
       }
@@ -814,6 +1021,36 @@
       return;
     }
     handleZipDownloadIntercept(event);
+  }
+
+  function installEminwonChildFrameInterceptors() {
+    if (sourceName() !== "e-minwon") {
+      return 0;
+    }
+
+    let installed = 0;
+    accessibleChildDocuments().forEach((doc) => {
+      const view = doc.defaultView;
+      if (!view || !hasRaonUploadControls(doc) || doc[EMINWON_CHILD_INTERCEPT_MARK]) {
+        return;
+      }
+      doc[EMINWON_CHILD_INTERCEPT_MARK] = true;
+
+      doc.addEventListener("pointerdown", handleDownloadIntercept, true);
+      doc.addEventListener("mousedown", handleDownloadIntercept, true);
+      doc.addEventListener("click", handleDownloadIntercept, true);
+      doc.addEventListener("click", captureDownloadIntent, true);
+      doc.addEventListener("pointerdown", captureDownloadIntent, true);
+      doc.addEventListener("keydown", function interceptChildKeyboardDownload(event) {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+        handleDownloadIntercept(event);
+        captureDownloadIntent(event);
+      }, true);
+      installed += 1;
+    });
+    return installed;
   }
 
   window.addEventListener("pointerdown", handleDownloadIntercept, true);
@@ -837,9 +1074,49 @@
 
   window.addEventListener("message", (event) => {
     const data = event && event.data;
-    if (!data || data.type !== EMINWON_QUEUE_BRIDGE_TYPE || sourceName() !== "e-minwon") {
+    if (!data) {
       return;
     }
+
+    if (data.type === EMINWON_CONTEXT_BRIDGE_TYPE) {
+      storeBridgedEminwonContexts(data.contexts);
+      return;
+    }
+
+    if (data.type === EMINWON_CONTEXT_REQUEST_TYPE) {
+      if (!isEminwonContextFrame()) {
+        return;
+      }
+      const contexts = buildEminwonContexts();
+      if (contexts.length === 0 || !event.source || typeof event.source.postMessage !== "function") {
+        return;
+      }
+      event.source.postMessage({
+        type: EMINWON_CONTEXT_BRIDGE_TYPE,
+        contexts: clonePlain(contexts) || contexts
+      }, "*");
+      return;
+    }
+
+    if (data.type !== EMINWON_QUEUE_BRIDGE_TYPE) {
+      return;
+    }
+
+    storeBridgedEminwonContexts(data.contexts);
+    if (!isEminwonContextFrame()) {
+      const result = {
+        started: false,
+        reason: "not-eminwon-frame",
+        detail: {
+          href: location.href
+        }
+      };
+      if (data.expectsResponse && event.ports && event.ports[0]) {
+        event.ports[0].postMessage(result);
+      }
+      return;
+    }
+
     const result = startEminwonQueueFromCurrentPage();
     if (data.expectsResponse && event.ports && event.ports[0]) {
       event.ports[0].postMessage(result);
@@ -850,7 +1127,7 @@
   });
 
   function sendAllPageContexts() {
-    if (sourceName() === "e-minwon") {
+    if (isEminwonContextFrame()) {
       const contexts = buildEminwonContexts();
       if (contexts.length === 1) {
         sendContext(contexts[0]);
@@ -869,8 +1146,23 @@
 
   // Listen for citation requests from the extension popup
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message && message.type === EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE) {
+      const matched = matchesEminwonQueueWaiter(message);
+      if (matched) {
+        settleEminwonQueueWaiter({
+          started: true,
+          downloadId: message.downloadId,
+          filename: message.filename || ""
+        });
+      }
+      sendResponse({
+        received: matched
+      });
+      return;
+    }
+
     if (message && message.type === START_EMINWON_QUEUE_TYPE) {
-      if (sourceName() !== "e-minwon") {
+      if (!isEminwonContextFrame()) {
         sendResponse({
           started: false,
           reason: "not-eminwon-frame",
@@ -885,7 +1177,7 @@
     }
 
     if (message && message.type === "get-report-title") {
-      if (sourceName() === "e-minwon") {
+      if (isEminwonContextFrame()) {
         const context = buildEminwonContexts()[0];
         sendResponse(eminwonMetadataFromContext(context) || { reportTitle: "" });
         return;
@@ -900,7 +1192,7 @@
       return;
     }
 
-    if (sourceName() === "e-minwon") {
+    if (isEminwonContextFrame()) {
       const metadata = eminwonMetadataFromContext(buildEminwonContexts()[0]);
       if (metadata) {
         chrome.runtime.sendMessage({
@@ -942,9 +1234,12 @@
   }
 
   function runPageInitialization() {
+    requestEminwonContextsFromParent();
     reportPageReady();
     extractAndReportMetadata();
     sendAllPageContexts();
+    broadcastEminwonContextsToChildFrames();
+    installEminwonChildFrameInterceptors();
   }
 
   if (document.readyState === "complete" || document.readyState === "interactive") {
@@ -954,4 +1249,5 @@
   }
   window.setTimeout(runPageInitialization, 1000);
   window.setTimeout(runPageInitialization, 3000);
+  window.setTimeout(runPageInitialization, 6000);
 })();

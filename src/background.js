@@ -7,6 +7,7 @@ if (typeof importScripts === "function") {
 const MESSAGE_TYPE = "arch-report-download-context";
 const PAGE_READY_TYPE = "arch-report-page-ready";
 const START_EMINWON_QUEUE_TYPE = "arch-report-start-eminwon-download-queue";
+const EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE = "arch-report-eminwon-queue-download-started";
 const STORAGE_KEY = "archReportSettings";
 const CONTEXT_TTL_MS = 30 * 60 * 1000;
 const MAX_CONTEXTS = 30;
@@ -412,7 +413,7 @@ function contextScore(entry, item, now) {
   return score;
 }
 
-function chooseContext(item) {
+function chooseContextEntry(item) {
   const now = Date.now();
   cleanupContexts(now);
 
@@ -438,7 +439,7 @@ function chooseContext(item) {
 
   if (queueEntry) {
     pendingContexts = pendingContexts.filter((entry) => entry !== queueEntry);
-    return queueEntry.context;
+    return queueEntry;
   }
 
   let best = null;
@@ -454,7 +455,32 @@ function chooseContext(item) {
   }
 
   pendingContexts = pendingContexts.filter((entry) => entry !== best.entry);
-  return best.entry.context;
+  return best.entry;
+}
+
+function chooseContext(item) {
+  const entry = chooseContextEntry(item);
+  return entry ? entry.context : null;
+}
+
+function notifyEminwonQueueDownloadStarted(entry, downloadItem, suggestedFilename) {
+  const context = entry && entry.context;
+  if (!context || context.source !== "e-minwon" || !context.queueBatchId) {
+    return false;
+  }
+  if (!hasChromeApi(["tabs", "sendMessage"]) || !Number.isInteger(entry.tabId) || entry.tabId < 0) {
+    return false;
+  }
+
+  sendQueueMessage(entry.tabId, entry.frameId, {
+    type: EMINWON_QUEUE_DOWNLOAD_STARTED_TYPE,
+    queueBatchId: context.queueBatchId,
+    queueOrder: context.queueOrder || "",
+    queueTargetIndex: context.queueTargetIndex || "",
+    downloadId: downloadItem && downloadItem.id,
+    filename: suggestedFilename || ""
+  }, () => {});
+  return true;
 }
 
 function registerChromeListeners() {
@@ -562,17 +588,19 @@ function registerChromeListeners() {
       return;
     }
 
-    const context = chooseContext(downloadItem);
-    if (!context) {
+    const entry = chooseContextEntry(downloadItem);
+    if (!entry || !entry.context) {
       suggest();
       return;
     }
 
+    const context = entry.context;
     const filename = ArchReportFilename.renderFilename(context, settingsCache, downloadItem);
     suggest({
       filename,
       conflictAction: "uniquify"
     });
+    notifyEminwonQueueDownloadStarted(entry, downloadItem, filename);
   });
 
   chrome.tabs.onRemoved.addListener((tabId) => {
@@ -611,10 +639,12 @@ if (typeof module !== "undefined" && module.exports) {
     },
     cleanupContexts,
     chooseContext,
+    chooseContextEntry,
     eminwonFrameIds,
     isLikelyEminwonDownload,
     isZipDownload,
     maybeCancelEminwonZip,
+    notifyEminwonQueueDownloadStarted,
     rememberTabSource,
     requestEminwonQueue,
     sendQueueMessage,

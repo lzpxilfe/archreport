@@ -336,6 +336,48 @@ test("background sends e-minwon queue messages with an options object", () => {
   delete global.chrome;
 });
 
+test("background notifies e-minwon queue frame when a queued download starts", () => {
+  const calls = [];
+  global.chrome = {
+    runtime: {
+      lastError: null
+    },
+    tabs: {
+      sendMessage(...args) {
+        calls.push(args);
+        args[3]({ received: true });
+      }
+    }
+  };
+
+  const notified = background.notifyEminwonQueueDownloadStarted({
+    tabId: 9,
+    frameId: 4,
+    context: {
+      source: "e-minwon",
+      queueBatchId: "batch-3",
+      queueOrder: "2",
+      queueTargetIndex: "1"
+    }
+  }, {
+    id: 77
+  }, "renamed.pdf");
+
+  assert.equal(notified, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 9);
+  assert.deepEqual(calls[0][1], {
+    type: "arch-report-eminwon-queue-download-started",
+    queueBatchId: "batch-3",
+    queueOrder: "2",
+    queueTargetIndex: "1",
+    downloadId: 77,
+    filename: "renamed.pdf"
+  });
+  assert.deepEqual(calls[0][2], { frameId: 4 });
+  delete global.chrome;
+});
+
 test("background cancels e-minwon ZIP only after queue starts", () => {
   const originalWarn = console.warn;
   console.warn = () => {};
