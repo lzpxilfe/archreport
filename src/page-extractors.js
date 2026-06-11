@@ -7,6 +7,13 @@
       .trim();
   }
 
+  function normalizeComparable(value) {
+    return normalizeSpaces(value)
+      .replace(/[ㆍ·]/g, "")
+      .replace(/[(){}\[\]<>「」『』,.;:，。·ㆍ\-_\s]/g, "")
+      .toLowerCase();
+  }
+
   function stripTags(html) {
     return normalizeSpaces(String(html || "").replace(/<[^>]*>/g, " "));
   }
@@ -527,6 +534,61 @@
     return null;
   }
 
+  function downloadIdentity(controlData) {
+    if (!controlData) {
+      return "";
+    }
+
+    const stableParts = [
+      controlData.sourceKind,
+      controlData.fileIdx,
+      controlData.menuIdx,
+      controlData.downloadUrl,
+      controlData.originalFilename,
+      controlData.fileTitle
+    ]
+      .map(normalizeSpaces)
+      .filter(Boolean);
+
+    return normalizeComparable(stableParts.join("|"));
+  }
+
+  function inferSequenceNumberForDownload(controlData, siblingControlDataList) {
+    if (!controlData) {
+      return "";
+    }
+
+    if (controlData.sequenceNumber) {
+      return normalizeSpaces(controlData.sequenceNumber);
+    }
+
+    const targetIdentity = downloadIdentity(controlData);
+    if (!targetIdentity || !Array.isArray(siblingControlDataList)) {
+      return "";
+    }
+
+    const seen = new Set();
+    const distinctSiblings = [];
+    siblingControlDataList.forEach((sibling) => {
+      if (!sibling || sibling.sourceKind !== controlData.sourceKind) {
+        return;
+      }
+      const identity = downloadIdentity(sibling);
+      if (!identity || seen.has(identity)) {
+        return;
+      }
+      seen.add(identity);
+      distinctSiblings.push(identity);
+    });
+
+    if (distinctSiblings.length <= 1) {
+      return "";
+    }
+
+    const index = distinctSiblings.indexOf(targetIdentity);
+    return index >= 0 ? String(index + 1) : "";
+  }
+
   function isDownloadControl(control) {
     if (!control) {
       return false;
@@ -551,6 +613,7 @@
     classifyEminwonDownloadControl,
     controlSearchText,
     decodeHtmlEntities,
+    downloadIdentity,
     deriveReportTitleFromUploadedFiles,
     extractAgencyFromText,
     extractEminwonContextFromDocument,
@@ -559,6 +622,7 @@
     extractReportTitleFromDocument,
     extractTableFactsFromDocument,
     extractYearFromText,
+    inferSequenceNumberForDownload,
     isDownloadControl,
     normalizeSpaces,
     parseDownloadControl,

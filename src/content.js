@@ -176,17 +176,11 @@
     const agency = tableFacts.agency || extractors.extractAgencyFromText(visibleText);
     const fileTitle = extractors.normalizeSpaces(controlData.fileTitle || controlData.originalFilename || "");
 
-    // Find all download controls on the page to compute dynamic sequence numbers
-    const allControls = Array.from(document.querySelectorAll("a, button, input"))
-      .filter((el) => extractors.isDownloadControl(el));
-
-    let sequenceNumber = controlData.sequenceNumber || "";
-    if (!sequenceNumber && allControls.length > 1) {
-      const index = allControls.indexOf(control);
-      if (index >= 0) {
-        sequenceNumber = String(index + 1);
-      }
-    }
+    const siblingControlData = Array.from(document.querySelectorAll("a, button, input"))
+      .filter((el) => extractors.isDownloadControl(el))
+      .map((el) => extractors.parseDownloadControl(el))
+      .filter(Boolean);
+    const sequenceNumber = extractors.inferSequenceNumberForDownload(controlData, siblingControlData);
 
     return filename.withDerivedContext({
       source: sourceName(),

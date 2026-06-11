@@ -203,6 +203,38 @@ test("nrich fixture exposes agency, year, and form download metadata", () => {
   assert.equal(parsed.fileTitle, "경주 월성 발굴조사 보고서 - C지구 가구역.pdf");
 });
 
+test("nrich preview and download controls for one PDF do not add sequence number", () => {
+  const nearbyText = "경주 월성 발굴조사 보고서 - C지구 가구역.pdf (50.59MB) 바로보기 다운로드";
+  const preview = extractors.parseDownloadControl(fakeControl({
+    onclick: "fnFileDownload('/kor/includeFileDownLoad.do', '714686', '1046', '');",
+    textContent: "바로보기",
+    nearbyText
+  }));
+  const download = extractors.parseDownloadControl(fakeControl({
+    onclick: "fnOriFileDownload('/kor/includeFileDownLoad.do', '714686', '1046', '');",
+    textContent: "다운로드",
+    nearbyText
+  }));
+
+  assert.equal(extractors.inferSequenceNumberForDownload(download, [preview, download]), "");
+});
+
+test("sequence number is inferred only for distinct sibling files", () => {
+  const first = extractors.parseDownloadControl(fakeControl({
+    onclick: "fnOriFileDownload('/kor/includeFileDownLoad.do', '714686', '1046', '');",
+    textContent: "다운로드",
+    nearbyText: "경주 월성 발굴조사 보고서 - C지구 가구역.pdf (50.59MB) 다운로드"
+  }));
+  const second = extractors.parseDownloadControl(fakeControl({
+    onclick: "fnOriFileDownload('/kor/includeFileDownLoad.do', '714687', '1046', '');",
+    textContent: "다운로드",
+    nearbyText: "경주 월성 발굴조사 보고서 - A지구 서성벽.pdf (80.12MB) 다운로드"
+  }));
+
+  assert.equal(extractors.inferSequenceNumberForDownload(first, [first, second]), "1");
+  assert.equal(extractors.inferSequenceNumberForDownload(second, [first, second]), "2");
+});
+
 test("e-minwon detail table exposes report metadata and RAON file name", () => {
   const html = readFixture("eminwon.html");
   const files = extractors.parseRaonUploadedFiles(html);
