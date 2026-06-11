@@ -4,6 +4,7 @@
   const MESSAGE_TYPE = "arch-report-download-context";
   const PAGE_READY_TYPE = "arch-report-page-ready";
   const START_EMINWON_QUEUE_TYPE = "arch-report-start-eminwon-download-queue";
+  const EMINWON_QUEUE_BRIDGE_TYPE = "arch-report-eminwon-download-queue-bridge";
   const EMINWON_QUEUE_DELAY_MS = 900;
   const EMINWON_QUEUE_CLICK_DELAY_MS = 50;
   const EMINWON_CONTROL_SELECTOR = "a, button, input, [onclick]";
@@ -197,9 +198,54 @@
   }
 
   function setCheckboxChecked(checkbox, checked) {
+    if (!checkbox) {
+      return;
+    }
+    if (checkbox.checked !== checked && typeof checkbox.click === "function" && !checkbox.disabled) {
+      checkbox.click();
+    }
+    if (checkbox.checked === checked) {
+      return;
+    }
     checkbox.checked = checked;
     checkbox.dispatchEvent(new Event("input", { bubbles: true }));
     checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function isEnabledControl(control) {
+    return Boolean(control) &&
+      !control.disabled &&
+      control.getAttribute("aria-disabled") !== "true" &&
+      control.getAttribute("disabled") === null;
+  }
+
+  function isVisibleControl(control) {
+    if (!control) {
+      return false;
+    }
+    if (control.offsetParent !== null) {
+      return true;
+    }
+    const rects = control.getClientRects ? control.getClientRects() : [];
+    return rects && rects.length > 0;
+  }
+
+  function controlPriority(control) {
+    let score = 0;
+    if (isVisibleControl(control)) {
+      score += 4;
+    }
+    if (isEnabledControl(control)) {
+      score += 4;
+    }
+    const text = extractors.controlSearchText(control);
+    if (/^\s*\uB2E4\uC6B4\uB85C\uB4DC\s*$/.test(text)) {
+      score += 3;
+    }
+    if (/\uC804\uCCB4|\uBAA8\uB450|zip/i.test(text)) {
+      score -= 5;
+    }
+    return score;
   }
 
   function getEminwonRegularDownloadButton(triggerControl) {
@@ -207,8 +253,14 @@
       return triggerControl;
     }
 
-    const controls = Array.from(document.querySelectorAll(EMINWON_CONTROL_SELECTOR));
-    return controls.find((control) => extractors.classifyEminwonDownloadControl(control) === "download") || null;
+    const controls = Array.from(document.querySelectorAll(EMINWON_CONTROL_SELECTOR))
+      .filter((control) =>
+        control !== triggerControl &&
+        isEnabledControl(control) &&
+        extractors.classifyEminwonDownloadControl(control) === "download"
+      )
+      .sort((left, right) => controlPriority(right) - controlPriority(left));
+    return controls[0] || null;
   }
 
   function createPlanFailure(reason, detail) {
@@ -338,7 +390,17 @@
     }
   }
 
-  function runEminwonDownloadQueue(plan) {
+  function clickEminwonDownloadButton(button) {
+    eminwonQueueClickInProgress = true;
+    try {
+      button.click();
+    } finally {
+      eminwonQueueClickInProgress = false;
+    }
+  }
+
+  function runEminwonDownloadQueue(plan, options) {
+    const opts = options || {};
     eminwonDownloadQueueRunning = true;
     const originalStates = plan.checkboxes.map((checkbox) => checkbox.checked);
     let position = 0;
@@ -356,14 +418,13 @@
       });
       sendContext(plan.contexts[targetIndex]);
 
-      window.setTimeout(() => {
-        eminwonQueueClickInProgress = true;
-        try {
-          plan.downloadButton.click();
-        } finally {
-          eminwonQueueClickInProgress = false;
-        }
-      }, 50);
+      if (position === 0 && opts.immediateFirstClick) {
+        clickEminwonDownloadButton(plan.downloadButton);
+      } else {
+        window.setTimeout(() => {
+          clickEminwonDownloadButton(plan.downloadButton);
+        }, EMINWON_QUEUE_CLICK_DELAY_MS);
+      }
 
       position += 1;
       window.setTimeout(runNext, EMINWON_QUEUE_DELAY_MS);
@@ -392,11 +453,17 @@
     const plan = buildEminwonDownloadPlan(control);
 
     if (!plan.ok || plan.targetIndexes.length <= 1) {
-      if (triggerKind === "all" && buildEminwonContexts().length > 1) {
+      const localContextCount = buildEminwonContexts().length;
+      if (triggerKind === "all" && (!plan.ok || localContextCount > 1)) {
+        const childFrameCount = broadcastEminwonQueueToChildFrames("");
+        if (!plan.ok && localContextCount === 0 && childFrameCount === 0) {
+          return false;
+        }
         stopDownloadEvent(event);
         debugWarn("blocked e-minwon ZIP trigger but could not start queue", {
           reason: plan.reason,
-          detail: plan.detail
+          detail: plan.detail,
+          childFrameCount
         });
         return true;
       }
@@ -404,7 +471,7 @@
     }
 
     stopDownloadEvent(event);
-    runEminwonDownloadQueue(plan);
+    runEminwonDownloadQueue(plan, { immediateFirstClick: true });
     return true;
   }
 
@@ -439,6 +506,104 @@
       started: true,
       targetCount: plan.targetIndexes.length
     };
+  }
+
+  function broadcastEminwonQueueToChildFrames(downloadId, callback) {
+    const done = typeof callback === "function" ? callback : null;
+    const frames = Array.from(document.querySelectorAll("iframe, frame"))
+      .filter((frame) => frame && frame.contentWindow);
+    if (frames.length === 0) {
+      return 0;
+    }
+
+    let pending = frames.length;
+    let finished = false;
+    let lastResult = null;
+    const finish = (result) => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      if (done) {
+        done(result);
+      }
+    };
+
+    const timeoutId = done ? window.setTimeout(() => {
+      finish(lastResult || {
+        started: false,
+        reason: "child-frame-timeout",
+        detail: {
+          childFrameCount: frames.length
+        }
+      });
+    }, 1200) : null;
+
+    frames.forEach((frame) => {
+      const message = {
+        type: EMINWON_QUEUE_BRIDGE_TYPE,
+        downloadId,
+        expectsResponse: Boolean(done)
+      };
+
+      if (done && typeof MessageChannel !== "undefined") {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => {
+          const result = event && event.data;
+          if (result && result.started) {
+            if (timeoutId) {
+              window.clearTimeout(timeoutId);
+            }
+            finish(result);
+            return;
+          }
+          lastResult = result || { started: false, reason: "empty-child-response" };
+          pending -= 1;
+          if (pending === 0) {
+            if (timeoutId) {
+              window.clearTimeout(timeoutId);
+            }
+            finish(lastResult);
+          }
+        };
+        frame.contentWindow.postMessage(message, "*", [channel.port2]);
+        return;
+      }
+
+      frame.contentWindow.postMessage(message, "*");
+    });
+    return frames.length;
+  }
+
+  function startEminwonQueueOrBroadcast(downloadId, callback) {
+    const result = startEminwonQueueFromCurrentPage();
+    if (result.started) {
+      callback(result);
+      return;
+    }
+
+    const childFrameCount = broadcastEminwonQueueToChildFrames(downloadId, (childResult) => {
+      if (childResult && childResult.started) {
+        callback(Object.assign({}, childResult, {
+          reason: childResult.reason || "child-frame-started"
+        }));
+        return;
+      }
+      callback({
+        started: false,
+        reason: "local-and-child-queue-failed",
+        detail: {
+          childFrameCount,
+          localReason: result.reason,
+          localDetail: result.detail,
+          childResult
+        }
+      });
+    });
+
+    if (childFrameCount === 0) {
+      callback(result);
+    }
   }
 
   function captureDownloadIntent(event) {
@@ -582,6 +747,20 @@
     captureDownloadIntent(event);
   }, true);
 
+  window.addEventListener("message", (event) => {
+    const data = event && event.data;
+    if (!data || data.type !== EMINWON_QUEUE_BRIDGE_TYPE || sourceName() !== "e-minwon") {
+      return;
+    }
+    const result = startEminwonQueueFromCurrentPage();
+    if (data.expectsResponse && event.ports && event.ports[0]) {
+      event.ports[0].postMessage(result);
+    }
+    if (!result.started) {
+      debugWarn("e-minwon child frame queue did not start", result);
+    }
+  });
+
   function sendAllPageContexts() {
     if (sourceName() === "e-minwon") {
       const contexts = buildEminwonContexts();
@@ -613,8 +792,8 @@
         });
         return;
       }
-      sendResponse(startEminwonQueueFromCurrentPage());
-      return;
+      startEminwonQueueOrBroadcast(message.downloadId, sendResponse);
+      return true;
     }
 
     if (message && message.type === "get-report-title") {

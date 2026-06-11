@@ -200,6 +200,7 @@ function zipState(downloadId) {
       createdAt: Date.now(),
       cancelRequested: false,
       queueRequested: false,
+      queueStarted: false,
       removeAttempts: 0
     };
   }
@@ -224,13 +225,20 @@ function sendQueueMessage(tabId, frameId, payload, callback) {
   }
 }
 
-function requestEminwonQueue(downloadItem) {
+function requestEminwonQueue(downloadItem, callback) {
+  const done = typeof callback === "function" ? callback : () => {};
   if (!downloadItem || downloadItem.tabId < 0 || !hasChromeApi(["tabs", "sendMessage"])) {
+    done(false, { reason: "queue-message-unavailable" });
     return;
   }
 
   const state = zipState(downloadItem.id);
+  if (state.queueStarted) {
+    done(true, { reason: "queue-already-started" });
+    return;
+  }
   if (state.queueRequested) {
+    done(false, { reason: "queue-request-already-pending" });
     return;
   }
   state.queueRequested = true;
@@ -242,6 +250,8 @@ function requestEminwonQueue(downloadItem) {
   const frameIds = Array.from(new Set(eminwonFrameIds(downloadItem.tabId)));
   const targets = frameIds.length ? frameIds : [null];
   let finished = false;
+  let remaining = targets.length;
+  let lastFailure = null;
 
   targets.forEach((frameId) => {
     sendQueueMessage(downloadItem.tabId, frameId, payload, (error, response, respondedFrameId) => {
@@ -254,10 +264,18 @@ function requestEminwonQueue(downloadItem) {
           frameId: respondedFrameId,
           message: error.message
         });
+        lastFailure = { reason: "message-failed", message: error.message, frameId: respondedFrameId };
+        remaining -= 1;
+        if (remaining === 0) {
+          state.queueRequested = false;
+          done(false, lastFailure);
+        }
         return;
       }
       if (response && response.started) {
         finished = true;
+        state.queueStarted = true;
+        done(true, response);
         return;
       }
       debugWarn("e-minwon queue did not start", {
@@ -266,6 +284,12 @@ function requestEminwonQueue(downloadItem) {
         reason: response && response.reason,
         detail: response && response.detail
       });
+      lastFailure = response || { reason: "queue-not-started", frameId: respondedFrameId };
+      remaining -= 1;
+      if (remaining === 0) {
+        state.queueRequested = false;
+        done(false, lastFailure);
+      }
     });
   });
 }
@@ -305,22 +329,30 @@ function cancelEminwonZip(downloadItem) {
   }
 
   const state = zipState(downloadItem.id);
-  requestEminwonQueue(downloadItem);
+  requestEminwonQueue(downloadItem, (started, detail) => {
+    if (!started) {
+      debugWarn("leaving e-minwon ZIP download because queue did not start", {
+        downloadId: downloadItem.id,
+        detail
+      });
+      return;
+    }
 
-  if (state.cancelRequested) {
-    scheduleZipRemoval(downloadItem.id);
-    return;
-  }
-
-  state.cancelRequested = true;
-  if (hasChromeApi(["downloads", "cancel"])) {
-    chrome.downloads.cancel(downloadItem.id, () => {
-      consumeLastError();
+    if (state.cancelRequested) {
       scheduleZipRemoval(downloadItem.id);
-    });
-  } else {
-    scheduleZipRemoval(downloadItem.id);
-  }
+      return;
+    }
+
+    state.cancelRequested = true;
+    if (hasChromeApi(["downloads", "cancel"])) {
+      chrome.downloads.cancel(downloadItem.id, () => {
+        consumeLastError();
+        scheduleZipRemoval(downloadItem.id);
+      });
+    } else {
+      scheduleZipRemoval(downloadItem.id);
+    }
+  });
 }
 
 function maybeCancelEminwonZip(downloadItem) {
@@ -559,6 +591,7 @@ if (typeof module !== "undefined" && module.exports) {
     isZipDownload,
     maybeCancelEminwonZip,
     rememberTabSource,
+    requestEminwonQueue,
     sendQueueMessage,
     zipState
   };

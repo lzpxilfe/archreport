@@ -335,3 +335,50 @@ test("background sends e-minwon queue messages with an options object", () => {
   assert.deepEqual(calls[1].slice(0, 3), [3, { type: "x" }, { frameId: 7 }]);
   delete global.chrome;
 });
+
+test("background cancels e-minwon ZIP only after queue starts", () => {
+  const originalWarn = console.warn;
+  console.warn = () => {};
+
+  try {
+    let cancelCount = 0;
+    global.chrome = {
+      runtime: {
+        lastError: null
+      },
+      tabs: {
+        sendMessage(_tabId, _payload, _options, callback) {
+          callback({ started: false, reason: "no-plan" });
+        }
+      },
+      downloads: {
+        cancel(_downloadId, callback) {
+          cancelCount += 1;
+          callback();
+        },
+        removeFile(_downloadId, callback) {
+          callback();
+        },
+        erase(_query, callback) {
+          callback();
+        }
+      }
+    };
+
+    background._state.reset();
+    background.rememberTabSource(3, "e-minwon", "https://www.e-minwon.go.kr/example", 0);
+    background.maybeCancelEminwonZip({ id: 21, tabId: 3, filename: "download.zip" });
+    assert.equal(cancelCount, 0);
+
+    global.chrome.tabs.sendMessage = (_tabId, _payload, _options, callback) => {
+      callback({ started: true });
+    };
+    background._state.reset();
+    background.rememberTabSource(3, "e-minwon", "https://www.e-minwon.go.kr/example", 0);
+    background.maybeCancelEminwonZip({ id: 22, tabId: 3, filename: "download.zip" });
+    assert.equal(cancelCount, 1);
+  } finally {
+    console.warn = originalWarn;
+    delete global.chrome;
+  }
+});
