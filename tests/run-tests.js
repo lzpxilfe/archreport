@@ -77,6 +77,27 @@ function fakeDocumentForEminwon(fileNames, options) {
   };
 }
 
+function fakeChromeEvent() {
+  const listeners = [];
+  return {
+    listeners,
+    addListener(listener) {
+      if (!listeners.includes(listener)) {
+        listeners.push(listener);
+      }
+    },
+    removeListener(listener) {
+      const index = listeners.indexOf(listener);
+      if (index >= 0) {
+        listeners.splice(index, 1);
+      }
+    },
+    hasListener(listener) {
+      return listeners.includes(listener);
+    }
+  };
+}
+
 function readFixture(name) {
   return fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");
 }
@@ -522,11 +543,115 @@ test("background leaves e-minwon ZIP untouched while extension is disabled", () 
   }
 });
 
+test("background does not keep a global filename listener without context", () => {
+  const filenameEvent = fakeChromeEvent();
+  global.chrome = {
+    downloads: {
+      onDeterminingFilename: filenameEvent
+    }
+  };
+
+  try {
+    background._state.reset();
+
+    assert.equal(background.refreshDownloadFilenameListener(), false);
+    assert.equal(filenameEvent.listeners.length, 0);
+    assert.equal(background._state.downloadFilenameListenerRegistered, false);
+  } finally {
+    background._state.reset();
+    delete global.chrome;
+  }
+});
+
+test("background arms filename listener for pending context only", () => {
+  const filenameEvent = fakeChromeEvent();
+  global.chrome = {
+    runtime: {
+      lastError: null
+    },
+    downloads: {
+      onDeterminingFilename: filenameEvent
+    }
+  };
+
+  try {
+    background._state.reset();
+    background._state.pendingContexts.push({
+      tabId: 12,
+      frameId: 0,
+      context: {
+        source: "heritage",
+        reportTitle: "Report",
+        year: "2026",
+        agency: "Agency",
+        originalFilename: "source.pdf",
+        downloadUrl: "https://example.test/source.pdf",
+        pageUrl: "https://www.heritage.go.kr/example",
+        capturedAt: Date.now()
+      }
+    });
+
+    assert.equal(background.armDownloadFilenameListener(), true);
+    assert.equal(filenameEvent.listeners.length, 1);
+    assert.equal(background._state.downloadFilenameListenerRegistered, true);
+
+    let suggestion;
+    filenameEvent.listeners[0]({
+      id: 101,
+      tabId: 12,
+      filename: "source.pdf",
+      url: "https://example.test/source.pdf"
+    }, (value) => {
+      suggestion = value;
+    });
+
+    assert.deepEqual(suggestion, {
+      filename: "Agency, 2026, Report.pdf",
+      conflictAction: "uniquify"
+    });
+    assert.equal(background._state.pendingContexts.length, 0);
+    assert.equal(filenameEvent.listeners.length, 0);
+    assert.equal(background._state.downloadFilenameListenerRegistered, false);
+  } finally {
+    background._state.reset();
+    delete global.chrome;
+  }
+});
+
+test("background does not arm filename listener while disabled", () => {
+  const filenameEvent = fakeChromeEvent();
+  global.chrome = {
+    downloads: {
+      onDeterminingFilename: filenameEvent
+    }
+  };
+
+  try {
+    background._state.reset();
+    background._state.setSettings({ enabled: false });
+    background._state.pendingContexts.push({
+      tabId: 3,
+      frameId: 0,
+      context: {
+        reportTitle: "Report",
+        originalFilename: "source.pdf",
+        capturedAt: Date.now()
+      }
+    });
+
+    assert.equal(background.armDownloadFilenameListener(), false);
+    assert.equal(filenameEvent.listeners.length, 0);
+  } finally {
+    background._state.reset();
+    delete global.chrome;
+  }
+});
+
 test("manifest and package versions stay aligned", () => {
   const manifest = readJsonFromRoot("manifest.json");
   const packageJson = readJsonFromRoot("package.json");
 
-  assert.equal(manifest.version, "0.1.1");
+  assert.equal(manifest.version, "0.1.2");
   assert.equal(packageJson.version, manifest.version);
 });
 

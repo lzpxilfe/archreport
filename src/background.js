@@ -20,6 +20,7 @@ const STORAGE_KEY = constants.SETTINGS_STORAGE_KEY;
 const CONTEXT_TTL_MS = 30 * 60 * 1000;
 const MAX_CONTEXTS = 30;
 const DOWNLOAD_STATE_TTL_MS = 10 * 60 * 1000;
+const DOWNLOAD_FILENAME_LISTENER_IDLE_MS = 2 * 60 * 1000;
 const ZIP_REMOVE_RETRY_DELAYS_MS = [0, 500, 2000];
 const EMINWON_HOST = constants.HOSTS.EMINWON;
 const EMINWON_SOURCE = constants.SOURCES.EMINWON;
@@ -29,6 +30,9 @@ let settingsCache = filenameModule.mergeSettings();
 let pendingContexts = [];
 let tabSources = {};
 let zipDownloadStates = {};
+let downloadFilenameListenerRegistered = false;
+let downloadFilenameListenerTimer = null;
+let downloadFilenameListenerExpiresAt = 0;
 
 function hasChromeApi(path) {
   let current = typeof chrome !== "undefined" ? chrome : null;
@@ -47,6 +51,83 @@ function debugWarn(message, detail) {
 
 function consumeLastError() {
   return typeof chrome !== "undefined" && chrome.runtime ? chrome.runtime.lastError : null;
+}
+
+function downloadFilenameEvent() {
+  return hasChromeApi(["downloads", "onDeterminingFilename"])
+    ? chrome.downloads.onDeterminingFilename
+    : null;
+}
+
+function clearDownloadFilenameListenerTimer() {
+  if (downloadFilenameListenerTimer) {
+    clearTimeout(downloadFilenameListenerTimer);
+    downloadFilenameListenerTimer = null;
+  }
+}
+
+function scheduleDownloadFilenameListenerExpiry(now) {
+  clearDownloadFilenameListenerTimer();
+  const delay = Math.max(0, downloadFilenameListenerExpiresAt - now);
+  downloadFilenameListenerTimer = setTimeout(() => {
+    downloadFilenameListenerTimer = null;
+    if (Date.now() >= downloadFilenameListenerExpiresAt) {
+      unregisterDownloadFilenameListener();
+    }
+  }, delay);
+  if (downloadFilenameListenerTimer && typeof downloadFilenameListenerTimer.unref === "function") {
+    downloadFilenameListenerTimer.unref();
+  }
+}
+
+function registerDownloadFilenameListener() {
+  const event = downloadFilenameEvent();
+  if (!event || typeof event.addListener !== "function") {
+    return false;
+  }
+  if (!downloadFilenameListenerRegistered &&
+      (!event.hasListener || !event.hasListener(handleDownloadFilenameDetermination))) {
+    event.addListener(handleDownloadFilenameDetermination);
+  }
+  downloadFilenameListenerRegistered = true;
+  return true;
+}
+
+function unregisterDownloadFilenameListener() {
+  clearDownloadFilenameListenerTimer();
+  const event = downloadFilenameEvent();
+  if (event && typeof event.removeListener === "function" &&
+      (!event.hasListener || event.hasListener(handleDownloadFilenameDetermination))) {
+    event.removeListener(handleDownloadFilenameDetermination);
+  }
+  downloadFilenameListenerRegistered = false;
+  downloadFilenameListenerExpiresAt = 0;
+}
+
+function armDownloadFilenameListener(now) {
+  const armedAt = now || Date.now();
+  if (!settingsCache.enabled) {
+    unregisterDownloadFilenameListener();
+    return false;
+  }
+  if (!registerDownloadFilenameListener()) {
+    return false;
+  }
+  downloadFilenameListenerExpiresAt = Math.max(
+    downloadFilenameListenerExpiresAt,
+    armedAt + DOWNLOAD_FILENAME_LISTENER_IDLE_MS
+  );
+  scheduleDownloadFilenameListenerExpiry(armedAt);
+  return true;
+}
+
+function refreshDownloadFilenameListener() {
+  cleanupContexts(Date.now());
+  if (!settingsCache.enabled || pendingContexts.length === 0) {
+    unregisterDownloadFilenameListener();
+    return false;
+  }
+  return armDownloadFilenameListener();
 }
 
 function updateActionState(settings) {
@@ -80,6 +161,7 @@ function loadSettings() {
   chrome.storage.sync.get(STORAGE_KEY, (result) => {
     settingsCache = filenameModule.mergeSettings(result && result[STORAGE_KEY]);
     updateActionState(settingsCache);
+    refreshDownloadFilenameListener();
   });
 }
 
@@ -521,6 +603,60 @@ function notifyEminwonQueueDownloadStarted(entry, downloadItem, suggestedFilenam
   return true;
 }
 
+function handleDownloadFilenameDetermination(downloadItem, suggest) {
+  let didSuggest = false;
+  const safeSuggest = (suggestion) => {
+    if (didSuggest) {
+      return;
+    }
+    didSuggest = true;
+    suggest(suggestion);
+  };
+
+  try {
+    if (!settingsCache.enabled) {
+      safeSuggest();
+      return;
+    }
+
+    if (maybeCancelEminwonZip(downloadItem)) {
+      safeSuggest();
+      return;
+    }
+
+    const entry = chooseContextEntry(downloadItem);
+    if (!entry || !entry.context) {
+      safeSuggest();
+      return;
+    }
+
+    const context = entry.context;
+    const filename = filenameModule.renderFilename(context, settingsCache, downloadItem);
+    if (!filename) {
+      debugWarn("leaving download filename unchanged because rendered filename is empty", {
+        downloadId: downloadItem && downloadItem.id,
+        context
+      });
+      safeSuggest();
+      return;
+    }
+
+    safeSuggest({
+      filename,
+      conflictAction: "uniquify"
+    });
+    notifyEminwonQueueDownloadStarted(entry, downloadItem, filename);
+  } catch (error) {
+    debugWarn("leaving download filename unchanged after filename handler error", {
+      downloadId: downloadItem && downloadItem.id,
+      message: error && error.message
+    });
+    safeSuggest();
+  } finally {
+    refreshDownloadFilenameListener();
+  }
+}
+
 function registerChromeListeners() {
   if (!hasChromeApi(["runtime"])) {
     return;
@@ -536,6 +672,7 @@ function registerChromeListeners() {
     }
     settingsCache = filenameModule.mergeSettings(changes[STORAGE_KEY].newValue);
     updateActionState(settingsCache);
+    refreshDownloadFilenameListener();
   });
 
   chrome.runtime.onMessage.addListener((message, sender) => {
@@ -589,6 +726,7 @@ function registerChromeListeners() {
         });
       }
       cleanupContexts(Date.now());
+      armDownloadFilenameListener();
     }
   });
 
@@ -618,41 +756,17 @@ function registerChromeListeners() {
     });
   });
 
-  chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
-    if (!settingsCache.enabled) {
-      suggest();
-      return;
-    }
-
-    if (maybeCancelEminwonZip(downloadItem)) {
-      suggest();
-      return;
-    }
-
-    const entry = chooseContextEntry(downloadItem);
-    if (!entry || !entry.context) {
-      suggest();
-      return;
-    }
-
-    const context = entry.context;
-    const filename = filenameModule.renderFilename(context, settingsCache, downloadItem);
-    suggest({
-      filename,
-      conflictAction: "uniquify"
-    });
-    notifyEminwonQueueDownloadStarted(entry, downloadItem, filename);
-  });
-
   chrome.tabs.onRemoved.addListener((tabId) => {
     chrome.storage.local.remove([`reportMetadata_${tabId}`]);
     delete tabSources[String(tabId)];
+    refreshDownloadFilenameListener();
   });
 
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status === "loading") {
       chrome.storage.local.remove([`reportMetadata_${tabId}`]);
       delete tabSources[String(tabId)];
+      refreshDownloadFilenameListener();
     }
   });
 }
@@ -671,7 +785,14 @@ if (typeof module !== "undefined" && module.exports) {
       get zipDownloadStates() {
         return zipDownloadStates;
       },
+      get downloadFilenameListenerRegistered() {
+        return downloadFilenameListenerRegistered;
+      },
+      get downloadFilenameListenerExpiresAt() {
+        return downloadFilenameListenerExpiresAt;
+      },
       reset() {
+        unregisterDownloadFilenameListener();
         pendingContexts = [];
         tabSources = {};
         zipDownloadStates = {};
@@ -679,19 +800,24 @@ if (typeof module !== "undefined" && module.exports) {
       },
       setSettings(settings) {
         settingsCache = filenameModule.mergeSettings(settings);
+        refreshDownloadFilenameListener();
       }
     },
+    armDownloadFilenameListener,
     cleanupContexts,
     chooseContext,
     chooseContextEntry,
     eminwonFrameIds,
+    handleDownloadFilenameDetermination,
     isLikelyEminwonDownload,
     isZipDownload,
     maybeCancelEminwonZip,
     notifyEminwonQueueDownloadStarted,
     rememberTabSource,
+    refreshDownloadFilenameListener,
     requestEminwonQueue,
     sendQueueMessage,
+    unregisterDownloadFilenameListener,
     updateActionState,
     zipState
   };

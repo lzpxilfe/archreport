@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "국가유산 보고서 파일명 정리",
-  "description": "국가유산 보고서 PDF를 페이지 정보에 맞춘 읽기 좋은 파일명으로 저장합니다.",
-  "version": "0.1.1",
+  "description": "국가유산 보고서 PDF를 참고문헌식 파일명으로 저장하고, 인용문 복사까지 돕습니다.",
+  "version": "0.1.2",
   "permissions": [
     "downloads",
     "storage"
