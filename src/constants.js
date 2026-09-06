@@ -20,13 +20,17 @@
     CHA: "cha.go.kr",
     KHS: "khs.go.kr",
     EMINWON: "e-minwon.go.kr",
-    NRICH: "nrich.go.kr"
+    NRICH: "nrich.go.kr",
+    CIHC: "cihc.or.kr",
+    IHA: "iha.go.kr"
   };
 
   const SOURCES = {
     HERITAGE: "heritage",
     EMINWON: "e-minwon",
     NRICH: "nrich",
+    CIHC: "cihc",
+    IHA: "iha",
     UNKNOWN: "unknown"
   };
 
@@ -46,9 +50,18 @@
     DISABLED_TITLE: `${APP_TITLE} - \uAEBC\uC9D0`
   };
 
+  // 다른 확장 프로그램(예: 논문 PDF 인용식 파일명)과의 공존을 위한 설정.
+  // 학술 DB 호스트에서는 파일명 변경을 양보하고, 타 확장이 이미 파일명을
+  // 바꾼 다운로드는 e-minwon 큐가 진행 중이 아닌 이상 덮어쓰지 않는다.
+  const COEXISTENCE = {
+    OWN_EXTENSION_NAME: APP_TITLE,
+    KNOWN_ACADEMIC_HOST_PATTERN: /riss\.kr|dbpia|kiss\.kstudy|kci\.go\.kr|earticle\.net|koreascience|scienceon|krm\.or\.kr|dcollection|nanet\.go\.kr|nl\.go\.kr|kyobobook|scholar\.google/i
+  };
+
   const api = {
     ACTION,
     APP_TITLE,
+    COEXISTENCE,
     HOSTS,
     MESSAGES,
     SETTINGS_STORAGE_KEY: "archReportSettings",

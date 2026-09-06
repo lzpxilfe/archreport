@@ -25,6 +25,8 @@ const ZIP_REMOVE_RETRY_DELAYS_MS = [0, 500, 2000];
 const EMINWON_HOST = constants.HOSTS.EMINWON;
 const EMINWON_SOURCE = constants.SOURCES.EMINWON;
 const DOWNLOAD_DEBUG_PREFIX = "[archreport]";
+const OWN_EXTENSION_NAME = constants.COEXISTENCE.OWN_EXTENSION_NAME;
+const KNOWN_ACADEMIC_HOST_PATTERN = constants.COEXISTENCE.KNOWN_ACADEMIC_HOST_PATTERN;
 
 let settingsCache = filenameModule.mergeSettings();
 let pendingContexts = [];
@@ -230,6 +232,40 @@ function isZipDownload(item) {
 
 function hasEminwonUrl(item) {
   return downloadValues(item).some((value) => value.includes(EMINWON_HOST));
+}
+
+function isRenamedByOtherExtension(item) {
+  const name = String((item && item.byExtensionName) || "").trim();
+  return Boolean(name) && !name.includes(OWN_EXTENSION_NAME);
+}
+
+function isAcademicHostDownload(item) {
+  return downloadValues(item).some((value) => {
+    const host = hostFromUrl(value);
+    return host && KNOWN_ACADEMIC_HOST_PATTERN.test(host);
+  });
+}
+
+function hasEminwonQueueContext() {
+  return pendingContexts.some((entry) =>
+    entry.context &&
+    entry.context.source === EMINWON_SOURCE &&
+    entry.context.queueBatchId
+  );
+}
+
+function hasEminwonTabEvidence(tabId) {
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    return false;
+  }
+  const entry = tabSources[String(tabId)];
+  if (!entry) {
+    return false;
+  }
+  if (entry.source === EMINWON_SOURCE || String(entry.pageUrl || "").includes(EMINWON_HOST)) {
+    return true;
+  }
+  return eminwonFrameIds(tabId).length > 0;
 }
 
 function ensureTabSource(tabId) {
@@ -544,8 +580,8 @@ function chooseContextEntry(item) {
       entry.context.queueBatchId &&
       item &&
       (
-        (itemTabId >= 0 && entry.tabId === itemTabId) ||
-        (itemTabId < 0 && hasEminwonUrl(item))
+        hasEminwonUrl(item) ||
+        (itemTabId >= 0 && entry.tabId === itemTabId && hasEminwonTabEvidence(itemTabId))
       )
     )
     .sort((left, right) => {
@@ -564,6 +600,11 @@ function chooseContextEntry(item) {
 
   let best = null;
   for (const entry of pendingContexts) {
+    if (entry.context &&
+        entry.context.source === EMINWON_SOURCE &&
+        entry.context.queueBatchId) {
+      continue;
+    }
     const score = contextScore(entry, item, now);
     if (!best || score > best.score || (score === best.score && entry.context.capturedAt > best.entry.context.capturedAt)) {
       best = { entry, score };
@@ -620,6 +661,15 @@ function handleDownloadFilenameDetermination(downloadItem, suggest) {
     }
 
     if (maybeCancelEminwonZip(downloadItem)) {
+      safeSuggest();
+      return;
+    }
+
+    // 논문 파일명 확장 프로그램 등 다른 확장과의 공존:
+    // e-minwon 큐가 진행 중이 아닌 한, 학술 DB 호스트의 다운로드나
+    // 다른 확장이 이미 파일명을 바꾼 다운로드에는 개입하지 않는다.
+    if (!hasEminwonQueueContext() &&
+        (isRenamedByOtherExtension(downloadItem) || isAcademicHostDownload(downloadItem))) {
       safeSuggest();
       return;
     }
@@ -683,10 +733,13 @@ function registerChromeListeners() {
     if (message.type === REPORT_METADATA_EXTRACTED_TYPE && sender && sender.tab) {
       const tabId = sender.tab.id;
       const metadata = message.metadata;
-      const source = metadata && metadata.url && metadata.url.includes(EMINWON_HOST)
+      if (!metadata) {
+        return;
+      }
+      const source = metadata.url && metadata.url.includes(EMINWON_HOST)
         ? EMINWON_SOURCE
         : constants.SOURCES.UNKNOWN;
-      rememberTabSource(tabId, source, metadata && metadata.url, sender.frameId);
+      rememberTabSource(tabId, source, metadata.url, sender.frameId);
       const key = `reportMetadata_${tabId}`;
       chrome.storage.local.get(key, (result) => {
         const existing = result[key];
@@ -809,7 +862,11 @@ if (typeof module !== "undefined" && module.exports) {
     chooseContextEntry,
     eminwonFrameIds,
     handleDownloadFilenameDetermination,
+    hasEminwonQueueContext,
+    hasEminwonTabEvidence,
+    isAcademicHostDownload,
     isLikelyEminwonDownload,
+    isRenamedByOtherExtension,
     isZipDownload,
     maybeCancelEminwonZip,
     notifyEminwonQueueDownloadStarted,

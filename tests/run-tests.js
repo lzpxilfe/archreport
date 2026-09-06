@@ -11,6 +11,7 @@ const background = require("../src/background.js");
 
 function fakeControl(attrs) {
   return {
+    tagName: attrs.tagName || "A",
     dataset: attrs.dataset || {},
     textContent: attrs.textContent || "",
     value: attrs.value || "",
@@ -693,6 +694,7 @@ test("background updates toolbar badge for enabled state", () => {
 test("background consumes e-minwon queue contexts in queue order", () => {
   background._state.reset();
   const now = Date.now();
+  background.rememberTabSource(5, "e-minwon", "https://www.e-minwon.go.kr/example", 0);
   background._state.pendingContexts.push(
     {
       tabId: 5,
@@ -752,6 +754,128 @@ test("background consumes e-minwon queue context for tabless e-minwon downloads"
   assert.equal(context.sequenceNumber, "1");
 });
 
+test("relaxed text download controls are detected only on supported archive hosts", () => {
+  const cihcControl = fakeControl({ textContent: "선택된 자료 다운로드" });
+  const parsed = extractors.relaxedDownloadControlForHost(cihcControl, "www.cihc.or.kr");
+  assert.equal(parsed.sourceKind, "cihc");
+  assert.equal(parsed.agency, "충남역사문화연구원");
+
+  const digitalControl = fakeControl({ textContent: "파일 다운로드" });
+  const digital = extractors.relaxedDownloadControlForHost(digitalControl, "digital.khs.go.kr");
+  assert.equal(digital.sourceKind, "digital-heritage");
+
+  const ihaChapter = fakeControl({
+    textContent: "1. 표지",
+    href: "javascript:getDownloadDataFile('96456');"
+  });
+  const ihaParsed = extractors.relaxedDownloadControlForHost(ihaChapter, "www.iha.go.kr");
+  assert.equal(ihaParsed.sourceKind, "iha");
+
+  const ihaMain = fakeControl({ textContent: "다운로드" });
+  assert.equal(
+    extractors.relaxedDownloadControlForHost(ihaMain, "www.iha.go.kr").sourceKind,
+    "iha"
+  );
+
+  assert.equal(extractors.relaxedDownloadControlForHost(cihcControl, "www.heritage.go.kr"), null);
+  assert.equal(
+    extractors.relaxedDownloadControlForHost(fakeControl({ textContent: "마이 Box 담기" }), "digital.khs.go.kr"),
+    null
+  );
+  assert.equal(
+    extractors.relaxedDownloadControlForHost(fakeControl({ textContent: "1. 표지" }), "www.iha.go.kr"),
+    null
+  );
+});
+
+test("iha infos list exposes agency and production year", () => {
+  const doc = {
+    querySelectorAll(selector) {
+      if (selector === "th, dt") {
+        return [];
+      }
+      if (selector === ".infos li") {
+        return [
+          {
+            querySelector(name) {
+              if (name === "strong") return { textContent: "생산기관" };
+              if (name === "p") return { textContent: "국립무형유산원" };
+              return null;
+            }
+          },
+          {
+            querySelector(name) {
+              if (name === "strong") return { textContent: "생산년도" };
+              if (name === "p") return { textContent: "2012" };
+              return null;
+            }
+          }
+        ];
+      }
+      return [];
+    }
+  };
+
+  const facts = extractors.extractTableFactsFromDocument(doc);
+  assert.equal(facts.agency, "국립무형유산원");
+  assert.equal(facts.year, "2012");
+});
+
+test("iha strong.tt wins as report title", () => {
+  const doc = {
+    querySelectorAll(selector) {
+      if (selector === "strong.tt") {
+        return [{ textContent: "무형문화유산 자원조사 연구(무형문화유산 연구총서 3)" }];
+      }
+      if (selector === "h1") {
+        return [{ textContent: "무형유산지식새김" }];
+      }
+      return [];
+    },
+    querySelector() {
+      return null;
+    },
+    title: ""
+  };
+
+  assert.equal(
+    extractors.extractReportTitleFromDocument(doc),
+    "무형문화유산 자원조사 연구(무형문화유산 연구총서 3)"
+  );
+});
+
+test("cihc info-title wins over site logo h1 as report title", () => {
+  const doc = {
+    querySelectorAll(selector) {
+      if (selector === ".info-title") {
+        return [{ textContent: "조선왕실 가봉태실 근현대 학술자료집" }];
+      }
+      if (selector === "h1") {
+        return [{ textContent: "충남역사문화연구원" }];
+      }
+      return [];
+    },
+    querySelector() {
+      return null;
+    },
+    title: ""
+  };
+
+  assert.equal(extractors.extractReportTitleFromDocument(doc), "조선왕실 가봉태실 근현대 학술자료집");
+});
+
+test("cihc detail table derives year from generated date", () => {
+  const doc = {
+    querySelectorAll(selector) {
+      return selector === "th, dt" ? [fakeHeader("촬영(생성)일자", "2025-12-31")] : [];
+    }
+  };
+
+  const facts = extractors.extractTableFactsFromDocument(doc);
+  assert.equal(facts.submittedDate, "2025-12-31");
+  assert.equal(facts.year, "2025");
+});
+
 test("background consumes e-minwon queue context when download item omits tabId", () => {
   background._state.reset();
   background._state.pendingContexts.push({
@@ -774,4 +898,170 @@ test("background consumes e-minwon queue context when download item omits tabId"
   });
 
   assert.equal(context.sequenceNumber, "1");
+});
+
+test("background ignores e-minwon queue context for unrelated same-tab downloads", () => {
+  background._state.reset();
+  background._state.pendingContexts.push({
+    tabId: 5,
+    frameId: 0,
+    context: {
+      source: "e-minwon",
+      reportTitle: "테스트",
+      queueBatchId: "batch-4",
+      queueOrder: "1",
+      sequenceNumber: "1",
+      pageUrl: "https://www.e-minwon.go.kr/example",
+      capturedAt: Date.now()
+    }
+  });
+
+  const context = background.chooseContext({
+    tabId: 5,
+    url: "https://example.test/unrelated.pdf",
+    filename: "download.pdf"
+  });
+
+  assert.equal(context, null);
+  assert.equal(background._state.pendingContexts.length, 1);
+});
+
+test("background defers to another extension's renamed download", () => {
+  const filenameEvent = fakeChromeEvent();
+  global.chrome = {
+    downloads: {
+      onDeterminingFilename: filenameEvent
+    }
+  };
+
+  try {
+    background._state.reset();
+    background._state.pendingContexts.push({
+      tabId: 12,
+      frameId: 0,
+      context: {
+        source: "heritage",
+        reportTitle: "Report",
+        year: "2026",
+        agency: "Agency",
+        originalFilename: "source.pdf",
+        downloadUrl: "https://example.test/source.pdf",
+        pageUrl: "https://www.heritage.go.kr/example",
+        capturedAt: Date.now()
+      }
+    });
+    background.armDownloadFilenameListener();
+
+    let suggestion;
+    filenameEvent.listeners[0]({
+      id: 201,
+      tabId: 12,
+      filename: "Kim, 2025, Some Paper Title.pdf",
+      url: "https://example.test/source.pdf",
+      byExtensionName: "논문 PDF 인용식 파일명"
+    }, (value) => {
+      suggestion = value;
+    });
+
+    assert.equal(suggestion, undefined);
+    assert.equal(background._state.pendingContexts.length, 1);
+  } finally {
+    background._state.reset();
+    delete global.chrome;
+  }
+});
+
+test("background defers on academic hosts even for same-tab contexts", () => {
+  const filenameEvent = fakeChromeEvent();
+  global.chrome = {
+    downloads: {
+      onDeterminingFilename: filenameEvent
+    }
+  };
+
+  try {
+    background._state.reset();
+    background._state.pendingContexts.push({
+      tabId: 13,
+      frameId: 0,
+      context: {
+        source: "heritage",
+        reportTitle: "Report",
+        year: "2026",
+        agency: "Agency",
+        originalFilename: "source.pdf",
+        downloadUrl: "https://www.heritage.go.kr/source.pdf",
+        pageUrl: "https://www.heritage.go.kr/example",
+        capturedAt: Date.now()
+      }
+    });
+    background.armDownloadFilenameListener();
+
+    let suggestion;
+    filenameEvent.listeners[0]({
+      id: 202,
+      tabId: 13,
+      filename: "paper.pdf",
+      url: "https://www.kci.go.kr/kciportal/ci/sereApp/download.pdf",
+      finalUrl: "https://www.kci.go.kr/kciportal/ci/sereApp/download.pdf"
+    }, (value) => {
+      suggestion = value;
+    });
+
+    assert.equal(suggestion, undefined);
+    assert.equal(background._state.pendingContexts.length, 1);
+  } finally {
+    background._state.reset();
+    delete global.chrome;
+  }
+});
+
+test("background renames e-minwon queue downloads even when another extension renamed", () => {
+  const filenameEvent = fakeChromeEvent();
+  global.chrome = {
+    downloads: {
+      onDeterminingFilename: filenameEvent
+    }
+  };
+
+  try {
+    background._state.reset();
+    background._state.pendingContexts.push({
+      tabId: 5,
+      frameId: 0,
+      context: {
+        source: "e-minwon",
+        reportTitle: "테스트",
+        year: "2026",
+        agency: "기관",
+        queueBatchId: "batch-5",
+        queueOrder: "1",
+        sequenceNumber: "1",
+        originalFilename: "source.pdf",
+        downloadUrl: "https://www.e-minwon.go.kr/kuploadProxy.do?file=source.pdf",
+        pageUrl: "https://www.e-minwon.go.kr/example",
+        capturedAt: Date.now()
+      }
+    });
+    background.armDownloadFilenameListener();
+
+    let suggestion;
+    filenameEvent.listeners[0]({
+      id: 203,
+      tabId: 5,
+      filename: "paper.pdf",
+      url: "https://www.e-minwon.go.kr/kuploadProxy.do?file=source.pdf",
+      byExtensionName: "논문 PDF 인용식 파일명"
+    }, (value) => {
+      suggestion = value;
+    });
+
+    assert.deepEqual(suggestion, {
+      filename: "기관, 2026, 테스트 1.pdf",
+      conflictAction: "uniquify"
+    });
+  } finally {
+    background._state.reset();
+    delete global.chrome;
+  }
 });

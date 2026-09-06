@@ -97,6 +97,12 @@
     if (host.includes(constants.HOSTS.EMINWON)) {
       return constants.SOURCES.EMINWON;
     }
+    if (host.includes(constants.HOSTS.CIHC)) {
+      return constants.SOURCES.CIHC;
+    }
+    if (host.includes(constants.HOSTS.IHA)) {
+      return constants.SOURCES.IHA;
+    }
     if (
       host.includes(constants.HOSTS.HERITAGE) ||
       host.includes(constants.HOSTS.CHA) ||
@@ -173,7 +179,9 @@
 
     const reportTitle = tableFacts.reportTitle || extractors.extractReportTitleFromDocument(document);
     const year = tableFacts.year || extractors.extractYearFromText(visibleText);
-    const agency = tableFacts.agency || extractors.extractAgencyFromText(visibleText);
+    const agency = tableFacts.agency ||
+      extractors.extractAgencyFromText(visibleText) ||
+      controlData.agency || "";
     const fileTitle = extractors.normalizeSpaces(controlData.fileTitle || controlData.originalFilename || "");
 
     const siblingControlData = Array.from(document.querySelectorAll("a, button, input"))

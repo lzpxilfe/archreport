@@ -13,6 +13,8 @@
     "*://*.khs.go.kr/*",
     "*://*.e-minwon.go.kr/*",
     "*://*.nrich.go.kr/*",
+    "*://*.cihc.or.kr/*",
+    "*://*.iha.go.kr/*",
     "http://116.67.83.213/*"
   ],
   "background": {
@@ -31,7 +33,9 @@
         "*://*.cha.go.kr/*",
         "*://*.khs.go.kr/*",
         "*://*.e-minwon.go.kr/*",
-        "*://*.nrich.go.kr/*"
+        "*://*.nrich.go.kr/*",
+        "*://*.cihc.or.kr/*",
+        "*://*.iha.go.kr/*"
       ],
       "js": [
         "src/constants.js",

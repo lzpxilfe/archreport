@@ -41,6 +41,8 @@
     ".detail_view h3",
     ".detail h3",
     ".view h3",
+    "strong.tt",
+    ".info-title",
     "h1",
     "h2",
     "h3"
@@ -55,7 +57,11 @@
     "\uBC1C\uAC04\uC790\uB8CC",
     "\uBCF8\uBB38",
     "\uC5F0\uAD6C\uC131\uACFC",
-    "\uAD6D\uAC00\uC720\uC0B0 \uC9C0\uC2DD\uC774\uC74C"
+    "\uAD6D\uAC00\uC720\uC0B0 \uC9C0\uC2DD\uC774\uC74C",
+    "\uCD94\uB0A8\uC5ED\uC0AC\uBB38\uD654\uC5F0\uAD6C\uC6D0",
+    "\uAD6D\uAC00\uC720\uC0B0\uD3EC\uD138",
+    "\uAD6D\uAC00\uC720\uC0B0 \uB514\uC9C0\uD138 \uC11C\uBE44\uC2A4",
+    "\uBB34\uD615\uC720\uC0B0\uC9C0\uC2DD\uC0C8\uAE40"
   ]);
 
   const REPORT_TITLE_REJECT_PATTERNS = [
@@ -214,8 +220,12 @@
       "유적명(사업명)": "siteName",
       발간기관: "agency",
       발행기관: "agency",
+      생산기관: "agency",
       저작권자: "agency",
       제출일: "submittedDate",
+      발행일: "submittedDate",
+      "촬영(생성)일자": "submittedDate",
+      생산년도: "year",
       "조사 시도": "province",
       "조사 시군구": "district"
     };
@@ -231,6 +241,23 @@
         value = normalizeSpaces(header.nextElementSibling && header.nextElementSibling.textContent);
       }
       if (value) {
+        facts[key] = value;
+      }
+    }
+
+    // iha.go.kr(무형유산지식새김) 등 li > strong(라벨) + p(값) 구조의 메타데이터
+    for (const item of Array.from(doc.querySelectorAll(".infos li"))) {
+      if (!item.querySelector) {
+        continue;
+      }
+      const labelEl = item.querySelector("strong");
+      const valueEl = item.querySelector("p");
+      if (!labelEl || !valueEl) {
+        continue;
+      }
+      const key = labelMap[normalizeSpaces(labelEl.textContent)];
+      const value = normalizeSpaces(valueEl.textContent);
+      if (key && value) {
         facts[key] = value;
       }
     }
@@ -485,6 +512,85 @@
     return [];
   }
 
+  // cihc.or.kr(충남역사문화연구원)와 digital.khs.go.kr(국가유산 디지털 서비스)는
+  // 고유 함수명 기반 다운로드가 아니라 "선택된 자료 다운로드" 등 일반 텍스트 버튼을
+  // 쓰므로, 해당 호스트에서만 텍스트 기반 감지를 완화한다.
+  const RELAXED_TEXT_DOWNLOAD_HOSTS = ["digital.khs.go.kr", "cihc.or.kr", "iha.go.kr"];
+  const CIHC_AGENCY = "충남역사문화연구원";
+
+  function isRelaxedDownloadHost(hostname) {
+    const clean = String(hostname || "").toLowerCase();
+    return RELAXED_TEXT_DOWNLOAD_HOSTS.some((host) =>
+      clean === host || clean.endsWith(`.${host}`)
+    );
+  }
+
+  function hostForControl(control) {
+    const ownerDoc = control && control.ownerDocument;
+    const docLocation = ownerDoc && ownerDoc.location;
+    if (docLocation && docLocation.hostname) {
+      return docLocation.hostname;
+    }
+    if (typeof location !== "undefined" && location && location.hostname) {
+      return location.hostname;
+    }
+    return "";
+  }
+
+  function relaxedDownloadControlForHost(control, hostname) {
+    if (!control || !isRelaxedDownloadHost(hostname)) {
+      return null;
+    }
+    const tag = String(control.tagName || "").toLowerCase();
+    if (!/^(a|button|input)$/.test(tag)) {
+      return null;
+    }
+    const text = controlSearchText(control);
+    const source = getControlSource(control);
+    const isIha = String(hostname).toLowerCase().includes("iha");
+    if (isIha) {
+      // iha.go.kr는 목차 파일 링크(getDownloadDataFile)에 "다운로드" 텍스트가 없다
+      if (!text.includes("다운로드") && !source.includes("getDownloadDataFile")) {
+        return null;
+      }
+      if (text.includes("마이")) {
+        return null;
+      }
+      return {
+        sourceKind: "iha",
+        downloadUrl: "",
+        originalFilename: "",
+        fileTitle: "",
+        sequenceNumber: ""
+      };
+    }
+    if (!text || !text.includes("다운로드") || text.includes("마이")) {
+      return null;
+    }
+    const clean = String(hostname).toLowerCase();
+    if (clean.includes("cihc")) {
+      return {
+        sourceKind: "cihc",
+        downloadUrl: "",
+        originalFilename: "",
+        fileTitle: "",
+        agency: CIHC_AGENCY,
+        sequenceNumber: ""
+      };
+    }
+    return {
+      sourceKind: "digital-heritage",
+      downloadUrl: "",
+      originalFilename: "",
+      fileTitle: "",
+      sequenceNumber: ""
+    };
+  }
+
+  function isRelaxedTextDownloadControl(control) {
+    return relaxedDownloadControlForHost(control, hostForControl(control));
+  }
+
   function parseDownloadControl(control) {
     if (!control) {
       return null;
@@ -529,6 +635,11 @@
         fileTitle,
         sequenceNumber: ""
       };
+    }
+
+    const relaxed = isRelaxedTextDownloadControl(control);
+    if (relaxed) {
+      return relaxed;
     }
 
     return null;
@@ -597,14 +708,15 @@
     const text = controlSearchText(control);
 
     return Boolean(
-      (control.dataset && (control.dataset.url || control.dataset.filename)) ||
+      ((control.dataset && (control.dataset.url || control.dataset.filename)) ||
       source.includes("fn_getDownLode") ||
       source.includes("fnOriFileDownload") ||
       source.includes("fnFileDownload") ||
       source.includes("fn_file_download") ||
       source.includes("downloadFile") ||
       source.includes("fileDownload") ||
-      (text.includes("다운로드") && (source.includes("includeFileDownLoad") || source.includes("download") || source.includes("file")))
+      (text.includes("다운로드") && (source.includes("includeFileDownLoad") || source.includes("download") || source.includes("file")))) ||
+      Boolean(isRelaxedTextDownloadControl(control))
     );
   }
 
@@ -624,10 +736,12 @@
     extractYearFromText,
     inferSequenceNumberForDownload,
     isDownloadControl,
+    isRelaxedDownloadHost,
     normalizeSpaces,
     parseDownloadControl,
     parseJsCallArgs,
     parseRaonUploadedFiles,
+    relaxedDownloadControlForHost,
     stripTags
   };
 
