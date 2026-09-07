@@ -32,6 +32,7 @@ let settingsCache = filenameModule.mergeSettings();
 let pendingContexts = [];
 let tabSources = {};
 let zipDownloadStates = {};
+let renamedExpectations = {};
 let downloadFilenameListenerRegistered = false;
 let downloadFilenameListenerTimer = null;
 let downloadFilenameListenerExpiresAt = 0;
@@ -695,6 +696,9 @@ function handleDownloadFilenameDetermination(downloadItem, suggest) {
       filename,
       conflictAction: "uniquify"
     });
+    // 우선순위가 높은 다른 확장(예: 논문 파일명 확장)이 이 이름을 덮어썼는지
+    // onChanged에서 검증하기 위해 기록한다.
+    renamedExpectations[downloadItem.id] = filename;
     notifyEminwonQueueDownloadStarted(entry, downloadItem, filename);
   } catch (error) {
     debugWarn("leaving download filename unchanged after filename handler error", {
@@ -797,6 +801,25 @@ function registerChromeListeners() {
     }
     if (!delta.filename && !delta.mime && !delta.url && !delta.state) {
       return;
+    }
+
+    // 우리가 제안한 파일명이 다른 확장에 의해 덮어써졌는지 검출한다.
+    // (우선순위가 높은 확장의 결정 — 빈 이름 포함 — 이 최종 적용되기 때문)
+    const expected = renamedExpectations[delta.id];
+    if (expected && delta.filename) {
+      const finalBase = String(delta.filename.current || "").split(/[\\/]/).pop();
+      if (finalBase && finalBase !== expected.split("/").pop()) {
+        debugWarn("filename suggestion was overridden by another extension", {
+          downloadId: delta.id,
+          suggested: expected,
+          final: finalBase
+        });
+        if (hasChromeApi(["action", "setBadgeText"])) {
+          chrome.action.setBadgeText({ text: "!" });
+          chrome.action.setBadgeBackgroundColor({ color: "#b3261e" });
+        }
+        delete renamedExpectations[delta.id];
+      }
     }
 
     chrome.downloads.search({ id: delta.id }, (items) => {

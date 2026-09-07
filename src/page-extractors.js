@@ -61,7 +61,11 @@
     "\uCD94\uB0A8\uC5ED\uC0AC\uBB38\uD654\uC5F0\uAD6C\uC6D0",
     "\uAD6D\uAC00\uC720\uC0B0\uD3EC\uD138",
     "\uAD6D\uAC00\uC720\uC0B0 \uB514\uC9C0\uD138 \uC11C\uBE44\uC2A4",
-    "\uBB34\uD615\uC720\uC0B0\uC9C0\uC2DD\uC0C8\uAE40"
+    "\uBB34\uD615\uC720\uC0B0\uC9C0\uC2DD\uC0C8\uAE40",
+    "\uAD6D\uAC00\uC720\uC0B0 \uAC80\uC0C9",
+    "\uD14C\uB9C8\uCF58\uD150\uCE20\uAC80\uC0C9",
+    "\uAD6D\uAC00\uC720\uC0B0\uC774\uC57C\uAE30",
+    "\uC720\uB124\uC2A4\uCF54 \uB4F1\uC7AC\uC720\uC0B0"
   ]);
 
   const REPORT_TITLE_REJECT_PATTERNS = [
@@ -669,10 +673,6 @@
       return "";
     }
 
-    if (controlData.sequenceNumber) {
-      return normalizeSpaces(controlData.sequenceNumber);
-    }
-
     const targetIdentity = downloadIdentity(controlData);
     if (!targetIdentity || !Array.isArray(siblingControlDataList)) {
       return "";
@@ -694,6 +694,12 @@
 
     if (distinctSiblings.length <= 1) {
       return "";
+    }
+
+    // dataset.info 등의 고정 순번은 여러 파일이 있을 때만 의미가 있다.
+    // 단일 파일 페이지에서는 "1" 같은 첨부 순번이 파일명을 오염시킨다.
+    if (controlData.sequenceNumber) {
+      return normalizeSpaces(controlData.sequenceNumber);
     }
 
     const index = distinctSiblings.indexOf(targetIdentity);

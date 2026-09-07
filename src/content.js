@@ -177,7 +177,10 @@
     const tableFacts = extractors.extractTableFactsFromDocument(document);
     const visibleText = pageText();
 
-    const reportTitle = tableFacts.reportTitle || extractors.extractReportTitleFromDocument(document);
+    const reportTitle = tableFacts.reportTitle ||
+      extractors.extractReportTitleFromDocument(document) ||
+      extractors.deriveAttachmentTitle("", controlData.fileTitle || controlData.originalFilename) ||
+      "";
     const year = tableFacts.year || extractors.extractYearFromText(visibleText);
     const agency = tableFacts.agency ||
       extractors.extractAgencyFromText(visibleText) ||
