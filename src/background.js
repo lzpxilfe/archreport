@@ -787,6 +787,40 @@ function registerChromeListeners() {
     }
   });
 
+  // 논문 파일명 확장(paper-rename)과의 협업 핸드셰이크:
+  // 우선순위가 높은 paper-rename이 컨텍스트 없는 다운로드를 만나면 여기에
+  // 파일명을 문의하고, 있으면 그 이름으로 지정한다(설치 순서 무관 동작).
+  if (hasChromeApi(["runtime", "onMessageExternal"])) {
+    chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+      if (!message || message.type !== "arch-report-render-filename") {
+        return false;
+      }
+      if (!sender || sender.id !== "omlhpnjcpgeaakdkehnbcnmedlcbkmdo") {
+        return false;
+      }
+      const downloadItem = message.download || {};
+      cleanupContexts(Date.now());
+      const now = Date.now();
+      let best = null;
+      for (const entry of pendingContexts) {
+        if (entry.context && entry.context.source === EMINWON_SOURCE && entry.context.queueBatchId) {
+          continue;
+        }
+        const score = contextScore(entry, downloadItem, now);
+        if (!best || score > best.score) {
+          best = { entry, score };
+        }
+      }
+      if (!best || best.score < 4) {
+        sendResponse({ filename: "" });
+        return false;
+      }
+      const filename = filenameModule.renderFilename(best.entry.context, settingsCache, downloadItem);
+      sendResponse({ filename: filename || "" });
+      return false;
+    });
+  }
+
   chrome.action.onClicked.addListener(() => {
     chrome.runtime.openOptionsPage();
   });

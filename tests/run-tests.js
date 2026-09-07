@@ -652,7 +652,7 @@ test("manifest and package versions stay aligned", () => {
   const manifest = readJsonFromRoot("manifest.json");
   const packageJson = readJsonFromRoot("package.json");
 
-  assert.equal(manifest.version, "0.1.2");
+  assert.equal(manifest.version, "0.1.3");
   assert.equal(packageJson.version, manifest.version);
 });
 
