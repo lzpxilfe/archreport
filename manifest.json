@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "국가유산 보고서 파일명 정리",
   "description": "국가유산 보고서 PDF를 참고문헌식 파일명으로 저장하고, 인용문 복사까지 돕습니다.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "permissions": [
     "downloads",
     "storage"
@@ -62,7 +62,6 @@
   },
   "externally_connectable": {
     "ids": [
-      "jmbpkgnfbebononalekniidlhomcaoef",
       "jmbpkgngbebnonalekniidlhomcaokef"
     ]
   }

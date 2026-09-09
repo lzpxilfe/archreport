@@ -243,7 +243,20 @@ function isRenamedByOtherExtension(item) {
 function isAcademicHostDownload(item) {
   return downloadValues(item).some((value) => {
     const host = hostFromUrl(value);
-    return host && KNOWN_ACADEMIC_HOST_PATTERN.test(host);
+    if (!host) {
+      return false;
+    }
+    if (KNOWN_ACADEMIC_HOST_PATTERN.test(host)) {
+      return true;
+    }
+    // 대학 도서관 프록시(EZproxy 등)는 대상 호스트를 하이픈으로 인코딩한다.
+    // 예: riss-kr.proxy.univ.ac.kr, www-dbpia-co-kr.eproxy.yonsei.ac.kr
+    // 점을 요구하는 패턴(riss\.kr, kci\.go\.kr 등)이 그냥은 걸리지 않으므로
+    // 하이픈을 점으로 되돌린 형태도 함께 본다. 이 처리가 없으면 프록시를 경유한
+    // 논문 다운로드를 학술 호스트로 인식하지 못해, 국가유산 컨텍스트가 남아 있을 때
+    // 논문에 보고서 파일명이 붙을 수 있다.
+    const hyphenDecoded = host.replace(/-/g, ".");
+    return hyphenDecoded !== host && KNOWN_ACADEMIC_HOST_PATTERN.test(hyphenDecoded);
   });
 }
 
@@ -645,6 +658,10 @@ function notifyEminwonQueueDownloadStarted(entry, downloadItem, suggestedFilenam
   return true;
 }
 
+// 논문 PDF 인용식 파일명(paper-rename) 확장의 웹스토어 ID.
+// externally_connectable에 등록된 값과 반드시 같아야 핸드셰이크가 성립한다.
+const PAPER_RENAME_EXTENSION_ID = "jmbpkgngbebnonalekniidlhomcaokef";
+
 function handleDownloadFilenameDetermination(downloadItem, suggest) {
   let didSuggest = false;
   const safeSuggest = (suggestion) => {
@@ -667,10 +684,15 @@ function handleDownloadFilenameDetermination(downloadItem, suggest) {
     }
 
     // 논문 파일명 확장 프로그램 등 다른 확장과의 공존:
-    // e-minwon 큐가 진행 중이 아닌 한, 학술 DB 호스트의 다운로드나
-    // 다른 확장이 이미 파일명을 바꾼 다운로드에는 개입하지 않는다.
-    if (!hasEminwonQueueContext() &&
-        (isRenamedByOtherExtension(downloadItem) || isAcademicHostDownload(downloadItem))) {
+    // 학술 DB 호스트의 다운로드는 논문 확장의 몫이므로 e-minwon 큐가 진행
+    // 중이더라도 개입하지 않는다. e-minwon 호스트는 학술 패턴에 걸리지 않으므로
+    // 큐 자체가 이 조건에 막히는 일은 없다.
+    if (isAcademicHostDownload(downloadItem)) {
+      safeSuggest();
+      return;
+    }
+    // 다른 확장이 이미 이름을 바꾼 다운로드는 큐 진행 중에만 다시 가져간다.
+    if (!hasEminwonQueueContext() && isRenamedByOtherExtension(downloadItem)) {
       safeSuggest();
       return;
     }
@@ -795,7 +817,7 @@ function registerChromeListeners() {
       if (!message || message.type !== "arch-report-render-filename") {
         return false;
       }
-      if (!sender || sender.id !== "omlhpnjcpgeaakdkehnbcnmedlcbkmdo") {
+      if (!sender || sender.id !== PAPER_RENAME_EXTENSION_ID) {
         return false;
       }
       const downloadItem = message.download || {};

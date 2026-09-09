@@ -1,6 +1,6 @@
 {
   "name": "archreport-filename-extension",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Chrome extension for citation-style Korea Heritage report PDF filenames.",
   "license": "GPL-2.0-only",

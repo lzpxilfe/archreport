@@ -648,11 +648,56 @@ test("background does not arm filename listener while disabled", () => {
   }
 });
 
+test("academic hosts are recognised through library proxy hyphen encoding", () => {
+  // EZproxy는 대상 호스트를 하이픈으로 인코딩한다. 이 경로를 놓치면
+  // 프록시 경유 논문에 보고서 파일명이 붙는다.
+  assert.ok(background.isAcademicHostDownload({
+    url: "https://riss-kr.proxy.univ.ac.kr/pdf/download.do",
+    referrer: "https://riss-kr.proxy.univ.ac.kr/search/detail/DetailView.do"
+  }));
+  assert.ok(background.isAcademicHostDownload({
+    url: "https://www-dbpia-co-kr.eproxy.yonsei.ac.kr/pdf/1.pdf",
+    referrer: ""
+  }));
+  assert.ok(background.isAcademicHostDownload({
+    url: "https://www.riss.kr/pdf/download.do"
+  }));
+
+  // 국가유산 호스트는 하이픈을 되돌려도 학술로 오인되면 안 된다.
+  assert.ok(!background.isAcademicHostDownload({
+    url: "https://www.e-minwon.go.kr/file/report.pdf",
+    referrer: "https://www.e-minwon.go.kr/list.do"
+  }));
+  assert.ok(!background.isAcademicHostDownload({
+    url: "https://www.heritage.go.kr/file/report.pdf"
+  }));
+});
+
+test("external filename handshake accepts the real paper-rename extension id", () => {
+  // manifest의 externally_connectable과 핸들러의 sender.id 검사가 어긋나면
+  // 핸드셰이크가 조용히 죽는다. 두 값이 같은지 확인한다.
+  const manifest = readJsonFromRoot("manifest.json");
+  const source = fs.readFileSync(path.join(__dirname, "..", "src", "background.js"), "utf8");
+  const declared = manifest.externally_connectable.ids;
+
+  assert.deepEqual(declared, ["jmbpkgngbebnonalekniidlhomcaokef"]);
+  assert.ok(
+    source.includes('const PAPER_RENAME_EXTENSION_ID = "jmbpkgngbebnonalekniidlhomcaokef"'),
+    "sender.id 검사에 쓰는 상수가 manifest에 등록된 ID와 같아야 한다"
+  );
+  assert.ok(
+    source.includes("sender.id !== PAPER_RENAME_EXTENSION_ID"),
+    "sender 검사는 상수를 써야 한다 (문자열 하드코딩 시 오타를 놓친다)"
+  );
+});
+
 test("manifest and package versions stay aligned", () => {
   const manifest = readJsonFromRoot("manifest.json");
   const packageJson = readJsonFromRoot("package.json");
 
-  assert.equal(manifest.version, "0.1.3");
+  // 버전 값을 하드코딩하면 올릴 때마다 테스트를 같이 고쳐야 한다.
+  // 두 파일이 어긋나지 않는지, 그리고 형식이 semver인지만 본다.
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(packageJson.version, manifest.version);
 });
 
