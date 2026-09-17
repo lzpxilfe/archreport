@@ -1,5 +1,5 @@
 if (typeof importScripts === "function") {
-  importScripts("constants.js", "filename.js");
+  importScripts("site-policy.js", "constants.js", "filename.js");
 } else if (typeof require === "function") {
   if (typeof globalThis.ArchReportConstants === "undefined") {
     globalThis.ArchReportConstants = require("./constants.js");
@@ -26,13 +26,11 @@ const EMINWON_HOST = constants.HOSTS.EMINWON;
 const EMINWON_SOURCE = constants.SOURCES.EMINWON;
 const DOWNLOAD_DEBUG_PREFIX = "[archreport]";
 const OWN_EXTENSION_NAME = constants.COEXISTENCE.OWN_EXTENSION_NAME;
-const KNOWN_ACADEMIC_HOST_PATTERN = constants.COEXISTENCE.KNOWN_ACADEMIC_HOST_PATTERN;
 
 let settingsCache = filenameModule.mergeSettings();
 let pendingContexts = [];
 let tabSources = {};
 let zipDownloadStates = {};
-let renamedExpectations = {};
 let downloadFilenameListenerRegistered = false;
 let downloadFilenameListenerTimer = null;
 let downloadFilenameListenerExpiresAt = 0;
@@ -236,28 +234,14 @@ function hasEminwonUrl(item) {
 }
 
 function isRenamedByOtherExtension(item) {
+  // byExtensionId/Name identify the initiator, not a filename-changing extension.
+  if (item && item.byExtensionId && hasChromeApi(["runtime", "id"])) return item.byExtensionId !== chrome.runtime.id;
   const name = String((item && item.byExtensionName) || "").trim();
   return Boolean(name) && !name.includes(OWN_EXTENSION_NAME);
 }
 
 function isAcademicHostDownload(item) {
-  return downloadValues(item).some((value) => {
-    const host = hostFromUrl(value);
-    if (!host) {
-      return false;
-    }
-    if (KNOWN_ACADEMIC_HOST_PATTERN.test(host)) {
-      return true;
-    }
-    // 대학 도서관 프록시(EZproxy 등)는 대상 호스트를 하이픈으로 인코딩한다.
-    // 예: riss-kr.proxy.univ.ac.kr, www-dbpia-co-kr.eproxy.yonsei.ac.kr
-    // 점을 요구하는 패턴(riss\.kr, kci\.go\.kr 등)이 그냥은 걸리지 않으므로
-    // 하이픈을 점으로 되돌린 형태도 함께 본다. 이 처리가 없으면 프록시를 경유한
-    // 논문 다운로드를 학술 호스트로 인식하지 못해, 국가유산 컨텍스트가 남아 있을 때
-    // 논문에 보고서 파일명이 붙을 수 있다.
-    const hyphenDecoded = host.replace(/-/g, ".");
-    return hyphenDecoded !== host && KNOWN_ACADEMIC_HOST_PATTERN.test(hyphenDecoded);
-  });
+  return downloadValues(item).some(value => constants.sitePolicy.isAcademicSite(value));
 }
 
 function hasEminwonQueueContext() {
@@ -566,8 +550,18 @@ function urlScore(context, item) {
   return score;
 }
 
+function hasReportEvidence(context, item) {
+  const policy = constants.sitePolicy;
+  const values = [item && item.url, item && item.finalUrl, item && item.referrer, item && item.tabUrl];
+  // A generic filename or stale same-tab context does not establish ownership.
+  return values.some(value => policy.isReportSite(value)) ||
+    [item && item.url, item && item.finalUrl].some(value => policy.sameUrl(context.downloadUrl, value));
+}
+
 function contextScore(entry, item, now) {
+  if (!entry || !entry.context || !hasReportEvidence(entry.context, item)) return 0;
   let score = urlScore(entry.context, item);
+  if ([item && item.referrer, item && item.tabUrl].some(value => constants.sitePolicy.isReportSite(value))) score += 6;
   if (item && item.tabId >= 0 && entry.tabId === item.tabId) {
     score += 8;
   }
@@ -658,10 +652,6 @@ function notifyEminwonQueueDownloadStarted(entry, downloadItem, suggestedFilenam
   return true;
 }
 
-// 논문 PDF 인용식 파일명(paper-rename) 확장의 웹스토어 ID.
-// externally_connectable에 등록된 값과 반드시 같아야 핸드셰이크가 성립한다.
-const PAPER_RENAME_EXTENSION_ID = "jmbpkgngbebnonalekniidlhomcaokef";
-
 function handleDownloadFilenameDetermination(downloadItem, suggest) {
   let didSuggest = false;
   const safeSuggest = (suggestion) => {
@@ -691,7 +681,7 @@ function handleDownloadFilenameDetermination(downloadItem, suggest) {
       safeSuggest();
       return;
     }
-    // 다른 확장이 이미 이름을 바꾼 다운로드는 큐 진행 중에만 다시 가져간다.
+    // 다른 확장이 직접 시작한 다운로드는 큐 진행 중이 아닌 한 양보한다.
     if (!hasEminwonQueueContext() && isRenamedByOtherExtension(downloadItem)) {
       safeSuggest();
       return;
@@ -718,9 +708,6 @@ function handleDownloadFilenameDetermination(downloadItem, suggest) {
       filename,
       conflictAction: "uniquify"
     });
-    // 우선순위가 높은 다른 확장(예: 논문 파일명 확장)이 이 이름을 덮어썼는지
-    // onChanged에서 검증하기 위해 기록한다.
-    renamedExpectations[downloadItem.id] = filename;
     notifyEminwonQueueDownloadStarted(entry, downloadItem, filename);
   } catch (error) {
     debugWarn("leaving download filename unchanged after filename handler error", {
@@ -809,40 +796,6 @@ function registerChromeListeners() {
     }
   });
 
-  // 논문 파일명 확장(paper-rename)과의 협업 핸드셰이크:
-  // 우선순위가 높은 paper-rename이 컨텍스트 없는 다운로드를 만나면 여기에
-  // 파일명을 문의하고, 있으면 그 이름으로 지정한다(설치 순서 무관 동작).
-  if (hasChromeApi(["runtime", "onMessageExternal"])) {
-    chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-      if (!message || message.type !== "arch-report-render-filename") {
-        return false;
-      }
-      if (!sender || sender.id !== PAPER_RENAME_EXTENSION_ID) {
-        return false;
-      }
-      const downloadItem = message.download || {};
-      cleanupContexts(Date.now());
-      const now = Date.now();
-      let best = null;
-      for (const entry of pendingContexts) {
-        if (entry.context && entry.context.source === EMINWON_SOURCE && entry.context.queueBatchId) {
-          continue;
-        }
-        const score = contextScore(entry, downloadItem, now);
-        if (!best || score > best.score) {
-          best = { entry, score };
-        }
-      }
-      if (!best || best.score < 4) {
-        sendResponse({ filename: "" });
-        return false;
-      }
-      const filename = filenameModule.renderFilename(best.entry.context, settingsCache, downloadItem);
-      sendResponse({ filename: filename || "" });
-      return false;
-    });
-  }
-
   chrome.action.onClicked.addListener(() => {
     chrome.runtime.openOptionsPage();
   });
@@ -859,25 +812,8 @@ function registerChromeListeners() {
       return;
     }
 
-    // 우리가 제안한 파일명이 다른 확장에 의해 덮어써졌는지 검출한다.
-    // (우선순위가 높은 확장의 결정 — 빈 이름 포함 — 이 최종 적용되기 때문)
-    const expected = renamedExpectations[delta.id];
-    if (expected && delta.filename) {
-      const finalBase = String(delta.filename.current || "").split(/[\\/]/).pop();
-      if (finalBase && finalBase !== expected.split("/").pop()) {
-        debugWarn("filename suggestion was overridden by another extension", {
-          downloadId: delta.id,
-          suggested: expected,
-          final: finalBase
-        });
-        if (hasChromeApi(["action", "setBadgeText"])) {
-          chrome.action.setBadgeText({ text: "!" });
-          chrome.action.setBadgeBackgroundColor({ color: "#b3261e" });
-        }
-        delete renamedExpectations[delta.id];
-      }
-    }
-
+    // A changed filename can be Chrome uniquifying or the user editing Save As.
+    // It does not identify interference by another extension.
     chrome.downloads.search({ id: delta.id }, (items) => {
       if (chrome.runtime.lastError || !items || !items[0]) {
         return;

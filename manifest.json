@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "국가유산 보고서 파일명 정리",
   "description": "국가유산 보고서 PDF를 참고문헌식 파일명으로 저장하고, 인용문 복사까지 돕습니다.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "permissions": [
     "downloads",
     "storage"
@@ -38,6 +38,7 @@
         "*://*.iha.go.kr/*"
       ],
       "js": [
+        "src/site-policy.js",
         "src/constants.js",
         "src/filename.js",
         "src/page-extractors.js",
@@ -59,10 +60,5 @@
       "48": "icons/book-48.png",
       "128": "icons/book-128.png"
     }
-  },
-  "externally_connectable": {
-    "ids": [
-      "jmbpkgngbebnonalekniidlhomcaokef"
-    ]
   }
 }

@@ -51,14 +51,15 @@
   };
 
   // 다른 확장 프로그램(예: 논문 PDF 인용식 파일명)과의 공존을 위한 설정.
-  // 학술 DB 호스트에서는 파일명 변경을 양보하고, 타 확장이 이미 파일명을
-  // 바꾼 다운로드는 e-minwon 큐가 진행 중이 아닌 이상 덮어쓰지 않는다.
+  // 학술 DB 호스트와, 다른 확장이 직접 시작한 다운로드에 양보한다.
   const COEXISTENCE = {
-    OWN_EXTENSION_NAME: APP_TITLE,
-    KNOWN_ACADEMIC_HOST_PATTERN: /riss\.kr|dbpia|kiss\.kstudy|kci\.go\.kr|earticle\.net|koreascience|scienceon|krm\.or\.kr|dcollection|nanet\.go\.kr|nl\.go\.kr|kyobobook|scholar\.google/i
+    OWN_EXTENSION_NAME: "국가유산 보고서 파일명 정리"
   };
 
+  const sitePolicy = global.DownloadSitePolicy || (typeof require === "function" ? require("./site-policy.js") : null);
+
   const api = {
+    sitePolicy,
     ACTION,
     APP_TITLE,
     COEXISTENCE,

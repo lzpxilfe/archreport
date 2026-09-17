@@ -673,24 +673,6 @@ test("academic hosts are recognised through library proxy hyphen encoding", () =
   }));
 });
 
-test("external filename handshake accepts the real paper-rename extension id", () => {
-  // manifest의 externally_connectable과 핸들러의 sender.id 검사가 어긋나면
-  // 핸드셰이크가 조용히 죽는다. 두 값이 같은지 확인한다.
-  const manifest = readJsonFromRoot("manifest.json");
-  const source = fs.readFileSync(path.join(__dirname, "..", "src", "background.js"), "utf8");
-  const declared = manifest.externally_connectable.ids;
-
-  assert.deepEqual(declared, ["jmbpkgngbebnonalekniidlhomcaokef"]);
-  assert.ok(
-    source.includes('const PAPER_RENAME_EXTENSION_ID = "jmbpkgngbebnonalekniidlhomcaokef"'),
-    "sender.id 검사에 쓰는 상수가 manifest에 등록된 ID와 같아야 한다"
-  );
-  assert.ok(
-    source.includes("sender.id !== PAPER_RENAME_EXTENSION_ID"),
-    "sender 검사는 상수를 써야 한다 (문자열 하드코딩 시 오타를 놓친다)"
-  );
-});
-
 test("manifest and package versions stay aligned", () => {
   const manifest = readJsonFromRoot("manifest.json");
   const packageJson = readJsonFromRoot("package.json");
