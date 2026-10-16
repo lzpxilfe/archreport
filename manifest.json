@@ -1,8 +1,9 @@
 {
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5st+N7FK8WDqDTyTa8PpHtmYWQAkD3rkKK9R+r+zV9xmIjEZktX4e04ZuZ4DE6oTQDpQ7Hgohe4RVDuxNKWiTW+t6nxenU493m2BL2X1mxsr/rRyc51bLi7Il2iqyqX1z3neWZnAv//V4sTyoQDbCkEzr2RdXCs2/SRxzzXmiv75WIzb+n2scgvgCm64l47bog0NHpRFfrBv1YvOJan1DPBDDWqpACMpgEkDwcQwSL1EJGA5R5X0uNePudzAS4Ai7loLaAvtopBBX9jikgHj7aCGeyA3EOTH7G5M+r29C0uonq5Xp3m6P4KVMe732mUN2vmvjSn/Yr+lZ+9RbzEZuwIDAQAB",
   "manifest_version": 3,
   "name": "국가유산 보고서 파일명 정리",
   "description": "국가유산 보고서 PDF를 참고문헌식 파일명으로 저장하고, 인용문 복사까지 돕습니다.",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "permissions": [
     "downloads",
     "storage"

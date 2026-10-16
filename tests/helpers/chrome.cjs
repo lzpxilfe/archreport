@@ -6,15 +6,33 @@ function event() {
   return { listeners, addListener(fn) { listeners.push(fn); }, hasListener(fn) { return listeners.includes(fn); },
     removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } };
 }
+const registry = new Map();
 function createWorker(root, options = {}) {
   const data = structuredClone(options.data || {}), warnings = [], badges = [], external = [];
   const timers = new Set();
   const area = { get(key, cb) { if (!options.hangStorage) cb(Object.fromEntries([].concat(key).map(k => [k, structuredClone(data[k])]))); },
     set(values, cb) { Object.assign(data, structuredClone(values)); cb?.(); }, remove(key) { for (const k of [].concat(key)) delete data[k]; } };
   const chrome = {
-    runtime: { id: options.id || 'random-unpacked-id', onInstalled: event(), onStartup: event(), onMessage: event(), onMessageExternal: event(), openOptionsPage() {},
-      sendMessage(...args) { external.push(args); throw new Error('Unexpected cross-extension request'); } },
-    storage: { sync: area, local: area, onChanged: event() },
+    runtime: { id: options.id || 'random-unpacked-id', lastError: undefined, onInstalled: event(), onStartup: event(), onMessage: event(), onMessageExternal: event(), openOptionsPage() {},
+      // 확장 간 메시지: 같은 테스트 안에서 만든 다른 워커(registry)에게만 전달된다.
+      sendMessage(...args) {
+        if (typeof args[0] !== 'string') throw new Error('Unexpected internal sendMessage in worker');
+        const [targetId, message, callback] = args;
+        external.push([targetId, message]);
+        const target = registry.get(targetId);
+        setTimeout(() => {
+          if (!target) {
+            chrome.runtime.lastError = { message: 'Could not establish connection. Receiving end does not exist.' };
+            try { callback?.(); } finally { chrome.runtime.lastError = undefined; }
+            return;
+          }
+          let responded = false;
+          const respond = value => { if (!responded) { responded = true; setTimeout(() => callback?.(structuredClone(value)), 0); } };
+          const results = target.chrome.runtime.onMessageExternal.listeners.map(fn => fn(structuredClone(message), { id: chrome.runtime.id }, respond));
+          if (!results.includes(true) && !responded) respond(undefined);
+        }, 0);
+      } },
+    storage: { sync: area, local: area, session: area, onChanged: event() },
     action: { onClicked: event(), setBadgeText(v) { badges.push(v.text); }, setBadgeBackgroundColor() {}, setTitle() {} },
     tabs: { onCreated: event(), onRemoved: event(), onUpdated: event(), query(_, cb) { cb(options.tabs || [{ id: 22, windowId: 1 }]); }, sendMessage(...args) { args.at(-1)?.({}); } },
     windows: { getLastFocused(_, cb) { cb({ id: 1 }); } },
@@ -37,6 +55,8 @@ function createWorker(root, options = {}) {
     const suggest = value => { if (called) throw new Error('suggest called twice'); called = true; clearTimeout(watchdog); resolve(value); };
     try { const result = fn(item, suggest); if (!called && result !== true) suggest(); } catch (error) { clearTimeout(watchdog); reject(error); }
   })));
-  return { chrome, data, context, warnings, badges, external, message, download, dispose() { timers.forEach(clearTimeout); } };
+  const worker = { chrome, data, context, warnings, badges, external, message, download, dispose() { timers.forEach(clearTimeout); if (registry.get(chrome.runtime.id) === worker) registry.delete(chrome.runtime.id); } };
+  if (options.register !== false) registry.set(chrome.runtime.id, worker);
+  return worker;
 }
 module.exports = { createWorker };

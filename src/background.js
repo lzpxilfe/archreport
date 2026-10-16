@@ -1,6 +1,9 @@
 if (typeof importScripts === "function") {
-  importScripts("site-policy.js", "constants.js", "filename.js");
+  importScripts("site-policy.js", "coop.js", "constants.js", "filename.js");
 } else if (typeof require === "function") {
+  if (typeof globalThis.DownloadFilenameCoop === "undefined") {
+    globalThis.DownloadFilenameCoop = require("./coop.js");
+  }
   if (typeof globalThis.ArchReportConstants === "undefined") {
     globalThis.ArchReportConstants = require("./constants.js");
   }
@@ -32,8 +35,7 @@ let pendingContexts = [];
 let tabSources = {};
 let zipDownloadStates = {};
 let downloadFilenameListenerRegistered = false;
-let downloadFilenameListenerTimer = null;
-let downloadFilenameListenerExpiresAt = 0;
+let settingsLoaded = false;
 
 function hasChromeApi(path) {
   let current = typeof chrome !== "undefined" ? chrome : null;
@@ -60,27 +62,11 @@ function downloadFilenameEvent() {
     : null;
 }
 
-function clearDownloadFilenameListenerTimer() {
-  if (downloadFilenameListenerTimer) {
-    clearTimeout(downloadFilenameListenerTimer);
-    downloadFilenameListenerTimer = null;
-  }
-}
-
-function scheduleDownloadFilenameListenerExpiry(now) {
-  clearDownloadFilenameListenerTimer();
-  const delay = Math.max(0, downloadFilenameListenerExpiresAt - now);
-  downloadFilenameListenerTimer = setTimeout(() => {
-    downloadFilenameListenerTimer = null;
-    if (Date.now() >= downloadFilenameListenerExpiresAt) {
-      unregisterDownloadFilenameListener();
-    }
-  }, delay);
-  if (downloadFilenameListenerTimer && typeof downloadFilenameListenerTimer.unref === "function") {
-    downloadFilenameListenerTimer.unref();
-  }
-}
-
+// MV3 서비스 워커는 30초만 쉬어도 내려간다. 예전에는 보고서 페이지 정보가 들어올 때만
+// 파일명 리스너를 붙였다가 2분 뒤 떼었는데, 그 사이 워커가 내려가면 리스너도 정보도 사라져
+// 다운로드 순간 아무도 이름을 정하지 않는 일이 생겼다. 이제 리스너는 시작할 때 한 번,
+// 동기적으로 붙이고(크롬이 잠든 워커를 깨워 이벤트를 전달할 수 있도록) 다운로드마다
+// 우리 몫인지 즉시 판단한다. 우리 몫이 아니면 아무것도 제안하지 않고 바로 돌려준다.
 function registerDownloadFilenameListener() {
   const event = downloadFilenameEvent();
   if (!event || typeof event.addListener !== "function") {
@@ -94,41 +80,87 @@ function registerDownloadFilenameListener() {
   return true;
 }
 
+// 이전 버전과의 호환용 이름. 리스너는 항상 붙어 있고, 켜짐 여부만 돌려준다.
+function armDownloadFilenameListener() {
+  return registerDownloadFilenameListener() && settingsCache.enabled !== false;
+}
+
+function refreshDownloadFilenameListener() {
+  cleanupContexts(Date.now());
+  return downloadFilenameListenerRegistered && settingsCache.enabled !== false && pendingContexts.length > 0;
+}
+
 function unregisterDownloadFilenameListener() {
-  clearDownloadFilenameListenerTimer();
   const event = downloadFilenameEvent();
   if (event && typeof event.removeListener === "function" &&
       (!event.hasListener || event.hasListener(handleDownloadFilenameDetermination))) {
     event.removeListener(handleDownloadFilenameDetermination);
   }
   downloadFilenameListenerRegistered = false;
-  downloadFilenameListenerExpiresAt = 0;
 }
 
-function armDownloadFilenameListener(now) {
-  const armedAt = now || Date.now();
-  if (!settingsCache.enabled) {
-    unregisterDownloadFilenameListener();
-    return false;
-  }
-  if (!registerDownloadFilenameListener()) {
-    return false;
-  }
-  downloadFilenameListenerExpiresAt = Math.max(
-    downloadFilenameListenerExpiresAt,
-    armedAt + DOWNLOAD_FILENAME_LISTENER_IDLE_MS
-  );
-  scheduleDownloadFilenameListenerExpiry(armedAt);
-  return true;
+// ── 상태 보존 ──
+// 수집한 보고서 정보와 탭 출처를 storage.session에 둔다(브라우저를 닫으면 사라지고 디스크에 남지 않는다).
+const STATE_STORAGE_KEY = "archReportDownloadState";
+let stateRestored = false;
+let stateRestoreWaiters = [];
+
+function stateArea() {
+  if (hasChromeApi(["storage", "session", "get"])) return chrome.storage.session;
+  return null;
 }
 
-function refreshDownloadFilenameListener() {
-  cleanupContexts(Date.now());
-  if (!settingsCache.enabled || pendingContexts.length === 0) {
-    unregisterDownloadFilenameListener();
-    return false;
+function persistState() {
+  const area = stateArea();
+  if (!area) return;
+  try {
+    area.set({ [STATE_STORAGE_KEY]: { pendingContexts, tabSources } }, () => consumeLastError());
+  } catch (_error) {}
+}
+
+function restoreState(callback) {
+  const done = typeof callback === "function" ? callback : () => {};
+  if (stateRestored) {
+    done();
+    return;
   }
-  return armDownloadFilenameListener();
+  stateRestoreWaiters.push(done);
+  if (stateRestoreWaiters.length > 1) return;
+  const finish = () => {
+    stateRestored = true;
+    const waiters = stateRestoreWaiters;
+    stateRestoreWaiters = [];
+    waiters.forEach(fn => { try { fn(); } catch (_error) {} });
+  };
+  const area = stateArea();
+  if (!area) {
+    finish();
+    return;
+  }
+  // 저장소가 응답하지 않아도 다운로드를 붙잡고 있지 않도록 상한을 둔다.
+  const timer = setTimeout(finish, 1500);
+  try {
+    area.get(STATE_STORAGE_KEY, (result) => {
+      consumeLastError();
+      clearTimeout(timer);
+      const stored = result && result[STATE_STORAGE_KEY];
+      if (stored && !stateRestored) {
+        const key = entry => JSON.stringify([entry.tabId, entry.frameId, entry.context && entry.context.downloadUrl,
+          entry.context && entry.context.originalFilename, entry.context && entry.context.capturedAt]);
+        const merged = new Map();
+        (Array.isArray(stored.pendingContexts) ? stored.pendingContexts : []).concat(pendingContexts)
+          .filter(entry => entry && entry.context)
+          .forEach(entry => merged.set(key(entry), entry));
+        pendingContexts = Array.from(merged.values());
+        tabSources = Object.assign({}, stored.tabSources || {}, tabSources);
+        cleanupContexts(Date.now());
+      }
+      finish();
+    });
+  } catch (_error) {
+    clearTimeout(timer);
+    finish();
+  }
 }
 
 function updateActionState(settings) {
@@ -161,8 +193,8 @@ function loadSettings() {
   }
   chrome.storage.sync.get(STORAGE_KEY, (result) => {
     settingsCache = filenameModule.mergeSettings(result && result[STORAGE_KEY]);
+    settingsLoaded = true;
     updateActionState(settingsCache);
-    refreshDownloadFilenameListener();
   });
 }
 
@@ -652,16 +684,99 @@ function notifyEminwonQueueDownloadStarted(entry, downloadItem, suggestedFilenam
   return true;
 }
 
-function handleDownloadFilenameDetermination(downloadItem, suggest) {
-  let didSuggest = false;
-  const safeSuggest = (suggestion) => {
-    if (didSuggest) {
+function ensureReady(callback) {
+  const settingsReady = (done) => {
+    if (settingsLoaded || !hasChromeApi(["storage", "sync", "get"])) {
+      done();
       return;
     }
-    didSuggest = true;
-    suggest(suggestion);
+    let finished = false;
+    const finish = () => { if (!finished) { finished = true; done(); } };
+    const timer = setTimeout(finish, 1500);
+    chrome.storage.sync.get(STORAGE_KEY, (result) => {
+      consumeLastError();
+      clearTimeout(timer);
+      settingsCache = filenameModule.mergeSettings(result && result[STORAGE_KEY]);
+      settingsLoaded = true;
+      finish();
+    });
   };
+  settingsReady(() => restoreState(callback));
+}
 
+// 이 확장이 이 다운로드에 붙이고 싶은 이름을 정한다. callback({ filename, conflictAction } | undefined)
+// coop.js가 다운로드마다 한 번만 부르고, 자기 리스너와 논문 확장의 문의가 결과를 함께 쓴다.
+// 크롬의 DownloadItem에는 탭 ID가 없다. 다운로드를 시작한 페이지(referrer)가 어느 탭의 어느
+// 프레임이었는지로 탭을 알아내 e-minwon 큐·같은 탭 판정이 실제로 동작하게 한다.
+function resolveDownloadTabId(item) {
+  if (!item) return -1;
+  if (Number.isInteger(item.tabId) && item.tabId >= 0) return item.tabId;
+  const referrer = item.referrer || "";
+  if (!referrer) return -1;
+  const same = constants.sitePolicy.sameUrl;
+  let best = null;
+  for (const [tabId, source] of Object.entries(tabSources)) {
+    if (!source) continue;
+    const urls = [source.pageUrl].concat(Object.values(source.frames || {}).map(frame => frame && frame.pageUrl));
+    if (urls.some(url => url && same(url, referrer)) && (!best || source.capturedAt > best.at)) {
+      best = { tabId: Number(tabId), at: source.capturedAt || 0 };
+    }
+  }
+  if (!best) {
+    for (const entry of pendingContexts) {
+      if (entry && entry.context && Number.isInteger(entry.tabId) && entry.tabId >= 0 && same(entry.context.pageUrl, referrer) &&
+          (!best || entry.context.capturedAt > best.at)) {
+        best = { tabId: entry.tabId, at: entry.context.capturedAt || 0 };
+      }
+    }
+  }
+  return best ? best.tabId : -1;
+}
+
+function withResolvedTab(item) {
+  if (!item || (Number.isInteger(item.tabId) && item.tabId >= 0)) return item;
+  const tabId = resolveDownloadTabId(item);
+  return tabId >= 0 ? Object.assign({}, item, { tabId }) : item;
+}
+
+function decideReportFilename(rawDownloadItem, callback) {
+  const downloadItem = rawDownloadItem;
+  let finished = false;
+  const done = suggestion => {
+    if (finished) return;
+    finished = true;
+    callback(suggestion);
+  };
+  // 학술 DB 다운로드는 논문 확장의 몫이다. 상태를 읽을 필요도 없이 바로 답한다.
+  if (isAcademicHostDownload(downloadItem)) {
+    done();
+    return;
+  }
+  if ((settingsLoaded || !hasChromeApi(["storage", "sync", "get"])) && (stateRestored || !stateArea())) {
+    stateRestored = true;
+    decideDownloadFilename(withResolvedTab(downloadItem), done);
+    return;
+  }
+  // 워커가 막 깨어났다: 설정과 저장된 보고서 정보를 읽은 뒤 판단한다.
+  const watchdog = setTimeout(() => done(), 3300);
+  ensureReady(() => {
+    clearTimeout(watchdog);
+    if (!finished) decideDownloadFilename(withResolvedTab(downloadItem), done);
+  });
+}
+
+const coopBackground = globalThis.DownloadFilenameCoop.createBackground({
+  role: "report",
+  decide: decideReportFilename,
+  sitePolicy: constants.sitePolicy
+});
+
+// downloads.onDeterminingFilename 리스너. 공존 프로토콜을 거쳐 최종 이름을 제안한다.
+function handleDownloadFilenameDetermination(downloadItem, suggest) {
+  return coopBackground.handleDetermining(downloadItem, suggest);
+}
+
+function decideDownloadFilename(downloadItem, safeSuggest) {
   try {
     if (!settingsCache.enabled) {
       safeSuggest();
@@ -708,6 +823,7 @@ function handleDownloadFilenameDetermination(downloadItem, suggest) {
       filename,
       conflictAction: "uniquify"
     });
+    persistState();
     notifyEminwonQueueDownloadStarted(entry, downloadItem, filename);
   } catch (error) {
     debugWarn("leaving download filename unchanged after filename handler error", {
@@ -715,8 +831,6 @@ function handleDownloadFilenameDetermination(downloadItem, suggest) {
       message: error && error.message
     });
     safeSuggest();
-  } finally {
-    refreshDownloadFilenameListener();
   }
 }
 
@@ -725,22 +839,30 @@ function registerChromeListeners() {
     return;
   }
 
+  // 다운로드 리스너는 반드시 최상위에서 동기적으로 붙인다(잠든 워커를 깨워 전달받기 위해).
+  registerDownloadFilenameListener();
   chrome.runtime.onInstalled.addListener(loadSettings);
   chrome.runtime.onStartup.addListener(loadSettings);
   loadSettings();
+  restoreState();
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "sync" || !changes[STORAGE_KEY]) {
       return;
     }
     settingsCache = filenameModule.mergeSettings(changes[STORAGE_KEY].newValue);
+    settingsLoaded = true;
     updateActionState(settingsCache);
-    refreshDownloadFilenameListener();
   });
 
-  chrome.runtime.onMessage.addListener((message, sender) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message) {
       return;
+    }
+
+    if (message.type === constants.MESSAGES.COOP_STATUS) {
+      coopBackground.status(peers => sendResponse({ success: true, peers }));
+      return true;
     }
 
     if (message.type === REPORT_METADATA_EXTRACTED_TYPE && sender && sender.tab) {
@@ -765,6 +887,7 @@ function registerChromeListeners() {
 
     if (message.type === PAGE_READY_TYPE && sender && sender.tab) {
       rememberTabSource(sender.tab.id, message.source, message.pageUrl, sender.frameId);
+      persistState();
       return;
     }
 
@@ -792,9 +915,13 @@ function registerChromeListeners() {
         });
       }
       cleanupContexts(Date.now());
-      armDownloadFilenameListener();
+      persistState();
     }
   });
+
+  if (hasChromeApi(["runtime", "onMessageExternal"])) {
+    chrome.runtime.onMessageExternal.addListener(coopBackground.handleExternal);
+  }
 
   chrome.action.onClicked.addListener(() => {
     chrome.runtime.openOptionsPage();
@@ -827,14 +954,20 @@ function registerChromeListeners() {
   chrome.tabs.onRemoved.addListener((tabId) => {
     chrome.storage.local.remove([`reportMetadata_${tabId}`]);
     delete tabSources[String(tabId)];
-    refreshDownloadFilenameListener();
+    persistState();
   });
 
+  // 다운로드 링크를 누르는 순간에도 탭은 "loading"이 된다. 그때 지우면 방금 담은 정보가
+  // 사라질 수 있으므로, 실제로 다른 주소로 옮겨 갔을 때만 팝업용 페이지 정보를 비운다.
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.status === "loading") {
+    if (changeInfo && changeInfo.url) {
       chrome.storage.local.remove([`reportMetadata_${tabId}`]);
-      delete tabSources[String(tabId)];
-      refreshDownloadFilenameListener();
+      const source = tabSources[String(tabId)];
+      if (source && source.pageUrl && !constants.sitePolicy.sameUrl(source.pageUrl, changeInfo.url) &&
+          !constants.sitePolicy.isReportSite(changeInfo.url)) {
+        delete tabSources[String(tabId)];
+        persistState();
+      }
     }
   });
 }
@@ -856,11 +989,11 @@ if (typeof module !== "undefined" && module.exports) {
       get downloadFilenameListenerRegistered() {
         return downloadFilenameListenerRegistered;
       },
-      get downloadFilenameListenerExpiresAt() {
-        return downloadFilenameListenerExpiresAt;
-      },
       reset() {
         unregisterDownloadFilenameListener();
+        coopBackground._reset();
+        stateRestored = true;
+        settingsLoaded = false;
         pendingContexts = [];
         tabSources = {};
         zipDownloadStates = {};
@@ -868,10 +1001,12 @@ if (typeof module !== "undefined" && module.exports) {
       },
       setSettings(settings) {
         settingsCache = filenameModule.mergeSettings(settings);
-        refreshDownloadFilenameListener();
       }
     },
     armDownloadFilenameListener,
+    coopBackground,
+    decideReportFilename,
+    resolveDownloadTabId,
     cleanupContexts,
     chooseContext,
     chooseContextEntry,

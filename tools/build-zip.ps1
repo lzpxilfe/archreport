@@ -24,6 +24,14 @@ function Add-Ref([string]$ref, [string]$base = "") {
 
 Add-Ref "manifest.json"
 Add-Ref $manifest.background.service_worker
+# 서비스 워커가 importScripts로 부르는 파일도 담는다(빠지면 배포판 백그라운드가 죽는다).
+$workerPath = Join-Path $root ($manifest.background.service_worker -replace '/', [IO.Path]::DirectorySeparatorChar)
+if (Test-Path $workerPath) {
+  $workerBase = Split-Path -Parent $manifest.background.service_worker
+  foreach ($call in [regex]::Matches((Get-Content $workerPath -Raw -Encoding UTF8), 'importScripts\(([^)]*)\)')) {
+    foreach ($m in [regex]::Matches($call.Groups[1].Value, '["'']([^"'']+)["'']')) { Add-Ref $m.Groups[1].Value $workerBase }
+  }
+}
 foreach ($entry in $manifest.content_scripts) {
   foreach ($js in $entry.js) { Add-Ref $js }
   foreach ($css in $entry.css) { Add-Ref $css }
@@ -61,6 +69,15 @@ $archive = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
 try {
   foreach ($file in ($files | Sort-Object)) {
     $full = Join-Path $root ($file -replace '/', [IO.Path]::DirectorySeparatorChar)
+    if ($file -eq "manifest.json") {
+      # 개발자 모드 ID를 고정하는 "key"는 웹스토어가 받지 않으므로 업로드 zip에서 뺀다.
+      $text = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
+      $text = [regex]::Replace($text, '"key"\s*:\s*"[^"]*"\s*,\s*', '')
+      $entry = $archive.CreateEntry($file)
+      $writer = New-Object IO.StreamWriter($entry.Open(), (New-Object Text.UTF8Encoding($false)))
+      try { $writer.Write($text) } finally { $writer.Dispose() }
+      continue
+    }
     [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $full, $file)
   }
 } finally {

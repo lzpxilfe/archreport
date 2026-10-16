@@ -544,7 +544,7 @@ test("background leaves e-minwon ZIP untouched while extension is disabled", () 
   }
 });
 
-test("background does not keep a global filename listener without context", () => {
+test("background keeps no pending work without context", () => {
   const filenameEvent = fakeChromeEvent();
   global.chrome = {
     downloads: {
@@ -555,16 +555,15 @@ test("background does not keep a global filename listener without context", () =
   try {
     background._state.reset();
 
+    // 리스너는 항상 붙어 있지만(워커 재시작 대비), 담긴 정보가 없으면 할 일이 없다.
     assert.equal(background.refreshDownloadFilenameListener(), false);
-    assert.equal(filenameEvent.listeners.length, 0);
-    assert.equal(background._state.downloadFilenameListenerRegistered, false);
   } finally {
     background._state.reset();
     delete global.chrome;
   }
 });
 
-test("background arms filename listener for pending context only", () => {
+test("persistent filename listener renames a matched report and consumes its context", () => {
   const filenameEvent = fakeChromeEvent();
   global.chrome = {
     runtime: {
@@ -611,15 +610,15 @@ test("background arms filename listener for pending context only", () => {
       conflictAction: "uniquify"
     });
     assert.equal(background._state.pendingContexts.length, 0);
-    assert.equal(filenameEvent.listeners.length, 0);
-    assert.equal(background._state.downloadFilenameListenerRegistered, false);
+    // 다음 다운로드를 위해 리스너는 그대로 남는다.
+    assert.equal(filenameEvent.listeners.length, 1);
   } finally {
     background._state.reset();
     delete global.chrome;
   }
 });
 
-test("background does not arm filename listener while disabled", () => {
+test("disabled extension suggests nothing even with pending context", () => {
   const filenameEvent = fakeChromeEvent();
   global.chrome = {
     downloads: {
@@ -641,7 +640,10 @@ test("background does not arm filename listener while disabled", () => {
     });
 
     assert.equal(background.armDownloadFilenameListener(), false);
-    assert.equal(filenameEvent.listeners.length, 0);
+    let suggestion = "untouched";
+    filenameEvent.listeners[0]({ id: 7, tabId: 3, filename: "source.pdf", url: "https://www.heritage.go.kr/source.pdf" },
+      (value) => { suggestion = value; });
+    assert.equal(suggestion, undefined);
   } finally {
     background._state.reset();
     delete global.chrome;

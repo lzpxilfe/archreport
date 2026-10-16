@@ -12,7 +12,8 @@
     EMINWON_QUEUE_BRIDGE: "arch-report-eminwon-download-queue-bridge",
     EMINWON_QUEUE_DOWNLOAD_STARTED: "arch-report-eminwon-queue-download-started",
     REPORT_METADATA_EXTRACTED: "report-metadata-extracted",
-    GET_REPORT_TITLE: "get-report-title"
+    GET_REPORT_TITLE: "get-report-title",
+    COOP_STATUS: "arch-report-coop-status"
   };
 
   const HOSTS = {

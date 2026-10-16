@@ -22,7 +22,8 @@ for (const url of [
   const worker = createWorker(root); t.after(() => worker.dispose()); report(worker);
   const results = await worker.download({ id: 1, url, finalUrl: url, filename: 'download.pdf', mime: 'application/pdf' });
   assert.ok(results.every(value => !value));
-  assert.equal(worker.external.length, 0);
+  // 공존 프로토콜: 상대 확장에게만(웹스토어 ID) 묻고, 그 밖의 곳으로는 아무것도 보내지 않는다.
+  assert.ok(worker.external.every(([id, message]) => /^[a-p]{32}$/.test(id) && message.protocol === 'kr-download-filename-coop'));
 });
 test('report download still renames and duplicate suffix is not blamed on an extension', async t => {
   const worker = createWorker(root); t.after(() => worker.dispose()); report(worker);
@@ -32,10 +33,17 @@ test('report download still renames and duplicate suffix is not blamed on an ext
   worker.chrome.downloads.onChanged.listeners.forEach(fn => fn({ id: 2, filename: { current: 'C:\\Downloads\\기관, 2026, 보고서 제목 (1).pdf' } }));
   assert.equal(worker.warnings.length, 0); assert.ok(!worker.badges.includes('!'));
 });
-test('disabled worker has no filename or external-message handler', async t => {
+test('disabled worker never renames on its own', async t => {
   const worker = createWorker(root, { data: { archReportSettings: { enabled: false } } }); t.after(() => worker.dispose()); report(worker);
-  assert.equal(worker.chrome.downloads.onDeterminingFilename.listeners.length, 0);
-  assert.equal(worker.chrome.runtime.onMessageExternal.listeners.length, 0);
+  const url = 'https://www.heritage.go.kr/download.pdf';
+  assert.ok((await worker.download({ id: 3, url, finalUrl: url, filename: 'download.pdf' })).every(value => !value));
+});
+test('report context survives a service worker restart', async t => {
+  const worker = createWorker(root); t.after(() => worker.dispose()); report(worker);
+  const restarted = createWorker(root, { data: worker.data }); t.after(() => restarted.dispose());
+  const url = 'https://www.heritage.go.kr/download.pdf';
+  const [result] = await restarted.download({ id: 4, url, finalUrl: url, filename: 'download.pdf' });
+  assert.equal(result && result.filename, '기관, 2026, 보고서 제목.pdf');
 });
 test('report scope follows blob, wrapped URLs and university proxies', () => {
   for (const url of ['blob:https://www.e-minwon.go.kr/id', 'https://e-minwon-go-kr-ssl.proxy.any.edu/file',

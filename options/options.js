@@ -643,5 +643,22 @@
     bindControls();
     load();
     setupCitation();
+    showCoopStatus();
   });
+
+  // 논문 파일명 확장과 공존 프로토콜로 연결됐는지 작게 보여준다(연결됐을 때만).
+  function showCoopStatus() {
+    const target = document.getElementById("coop-status");
+    if (!target || typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) return;
+    try {
+      chrome.runtime.sendMessage({ type: constants.MESSAGES.COOP_STATUS }, (response) => {
+        void chrome.runtime.lastError;
+        const peers = response && Array.isArray(response.peers) ? response.peers : [];
+        if (!peers.some(peer => peer.role === "paper")) return;
+        target.textContent = "논문 파일명 확장과 연결됨";
+        target.title = "두 확장이 다운로드마다 서로 확인해 같은 파일명을 제안합니다.";
+        target.hidden = false;
+      });
+    } catch (_error) {}
+  }
 })();

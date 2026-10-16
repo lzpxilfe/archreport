@@ -59,6 +59,15 @@ def main():
         manifest = json.load(handle)
 
     files = {"manifest.json"} | manifest_refs(manifest)
+    # 서비스 워커가 importScripts로 부르는 파일도 담는다(빠지면 배포판 백그라운드가 죽는다).
+    worker = manifest.get("background", {}).get("service_worker")
+    if worker and os.path.exists(os.path.join(root, worker)):
+        with open(os.path.join(root, worker), encoding="utf-8") as handle:
+            worker_text = handle.read()
+        for call in re.findall(r"importScripts\(([^)]*)\)", worker_text):
+            for ref in re.findall(r"""["']([^"']+)["']""", call):
+                joined = os.path.normpath(os.path.join(os.path.dirname(worker), ref))
+                files.add(joined.replace("\\", "/"))
     for path in list(files):
         if path.endswith(".html"):
             files |= html_assets(root, path)
@@ -76,6 +85,11 @@ def main():
             info = zipfile.ZipInfo(path, date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
+            if path == "manifest.json":
+                # 개발자 모드 ID를 고정하는 "key"는 웹스토어가 받지 않으므로 업로드 zip에서 뺀다.
+                store_manifest = {k: v for k, v in manifest.items() if k != "key"}
+                archive.writestr(info, (json.dumps(store_manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+                continue
             with open(os.path.join(root, path), "rb") as handle:
                 archive.writestr(info, handle.read())
 

@@ -34,6 +34,7 @@
     return;
   }
 
+
   function debugWarn(message, detail) {
     if (typeof console === "undefined" || !console.warn) {
       return;
